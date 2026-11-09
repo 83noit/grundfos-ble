@@ -1,5 +1,10 @@
 # grundfos-ble
 
+[![CI](https://github.com/83noit/grundfos-ble/actions/workflows/ci.yml/badge.svg)](https://github.com/83noit/grundfos-ble/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/grundfos-ble)](https://pypi.org/project/grundfos-ble/)
+[![Python](https://img.shields.io/pypi/pyversions/grundfos-ble)](https://pypi.org/project/grundfos-ble/)
+[![License: MIT](https://img.shields.io/github/license/83noit/grundfos-ble)](LICENSE)
+
 Async, typed Python library for Grundfos circulator pumps that speak **GENIbus over
 Bluetooth LE**. The only supported pump today is the **ALPHA2 GO**. The framing layer is
 transport-agnostic and the pump profile is data, which should make related Grundfos Bluetooth
@@ -152,4 +157,4 @@ No code from these projects is used, but their published protocol research made 
 
 ## Licence
 
-MIT. See the `LICENSE` file.
+MIT, see [LICENSE](LICENSE).
