@@ -1,0 +1,109 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "grundfos-ble"
+version = "0.1.0"
+description = "Async Python library for Grundfos circulator pumps over GENIbus-on-Bluetooth LE (ALPHA2 GO first)"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+authors = [{ name = "83noit" }]
+keywords = ["grundfos", "alpha2", "genibus", "bluetooth", "ble", "pump", "home-assistant"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Home Automation",
+    "Typing :: Typed",
+]
+dependencies = [
+    "bleak>=3.0,<4",
+    "bleak-retry-connector>=4.0,<5",
+]
+
+[project.urls]
+Homepage = "https://github.com/83noit/grundfos-ble"
+Repository = "https://github.com/83noit/grundfos-ble"
+Issues = "https://github.com/83noit/grundfos-ble/issues"
+Changelog = "https://github.com/83noit/grundfos-ble/blob/main/CHANGELOG.md"
+
+[dependency-groups]
+dev = [
+    "pytest>=9",
+    "pytest-asyncio>=1.0",
+    "pytest-cov>=7",
+    "ruff>=0.14",
+    "mypy>=1.19",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/grundfos_ble"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/docs", "/README.md", "/CHANGELOG.md", "/LICENSE"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "B", "UP", "N", "SIM", "RUF", "ASYNC", "PT", "T20", "D",
+    "ANN", "ARG", "C4", "DTZ", "ERA", "ICN", "ISC", "PIE", "RET", "RSE", "SLF", "TID", "TRY",
+]
+ignore = [
+    "D203",  # one-blank-line-before-class (conflicts with D211)
+    "D213",  # multi-line-summary-second-line (conflicts with D212)
+    "TRY003",  # long messages in exceptions are fine here
+    "ISC001",  # conflicts with the formatter
+    "D105",  # magic methods need no docstring
+    "D107",  # __init__ is documented by the class
+    "N818",  # exception names read better without an Error suffix here
+    "RUF001",  # × and – are used deliberately in notes and docstrings
+    "RUF002",
+    "RUF003",
+    "ASYNC109",  # explicit timeout parameters are part of the transport API
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "ANN", "SLF001", "PLR2004", "ARG001"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.isort]
+known-first-party = ["grundfos_ble"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unreachable = true
+show_error_codes = true
+packages = ["grundfos_ble"]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+
+[tool.coverage.run]
+source = ["grundfos_ble"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

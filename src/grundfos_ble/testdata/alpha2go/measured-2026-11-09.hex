@@ -1,0 +1,14 @@
+# Recorded from an ALPHA2 GO (2026-11-09) through an ESPHome Bluetooth proxy.
+# One '<' line per BLE notification. Pump in constant flow; electronics temperature 39 C.
+
+# flow/head (09:49:32.018+00:00 UTC)
+> 27 07 e7 f8 0a 03 5d 01 22 62 7c
+< 24 2f f8 e7 0a 2b 00 02 35 02 00 00 24 39 90 e1 71 45 85 20
+< 78 7f ff ff ff 7f ff ff ff 7f ff ff ff 7f ff ff ff 3f 7e ac
+< 49 3e de 79 bc 40 98 cd a8 48 b0
+
+# power (09:49:35.020+00:00 UTC)
+> 27 07 e7 f8 0a 03 57 00 45 8a cd
+< 24 34 f8 e7 0a 30 00 01 00 03 00 00 29 43 66 a5 89 43 a2 03
+< 00 3d 1c 53 33 40 80 5c 00 40 7e 4c 00 44 cf 4f e0 ff c0 00
+< 00 ff c0 00 00 42 1c 00 00 00 00 00 00 00 97 56

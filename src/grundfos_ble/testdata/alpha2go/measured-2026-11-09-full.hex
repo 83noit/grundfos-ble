@@ -1,0 +1,50 @@
+# Recorded from an ALPHA2 GO XX-75 on 2026-11-09 through an ESPHome Bluetooth proxy.
+# One whole frame per '<' line. State: constant flow, setpoint 1.0 m3/h, no alarms.
+
+# process values 93/290
+> 27 07 e7 f8 0a 03 5d 01 22 62 7c
+< 24 2f f8 e7 0a 2b 00 02 35 02 00 00 24 39 92 3b 45 45 8f 68 66 7f ff ff ff 7f ff ff ff 7f ff ff ff 7f ff ff ff 3f 80 86 18 3e ef a8 18 40 98 89 3e fa ad
+
+# motor state 87/69
+> 27 07 e7 f8 0a 03 57 00 45 8a cd
+< 24 34 f8 e7 0a 30 00 01 00 03 00 00 29 43 65 1e 81 43 a2 03 00 3d 24 e1 99 40 89 be 80 40 8a 0c 00 44 d6 e4 80 ff c0 00 00 ff c0 00 00 42 28 00 00 00 00 00 00 00 6e cc
+
+# operation 86/8
+> 27 07 e7 f8 0a 03 56 00 08 24 94
+< 24 12 f8 e7 0a 0e 00 01 2f 01 00 00 07 01 00 08 39 91 a2 b4 cd 98
+
+# alarms 88/0
+> 27 07 e7 f8 0a 03 58 00 00 be 9d
+< 24 0d f8 e7 0a 09 00 02 3a 01 00 00 02 00 00 dc 50
+
+# warnings 88/11
+> 27 07 e7 f8 0a 03 58 00 0b 0f f6
+< 24 0d f8 e7 0a 09 00 02 3a 01 00 00 02 00 00 dc 50
+
+# AutoNight 90/8
+> 27 07 e7 f8 0a 03 5a 00 08 51 f5
+< 24 0c f8 e7 0a 08 00 01 4d 01 00 00 01 00 1a 69
+
+# max flow limiter 86/600
+> 27 07 e7 f8 0a 03 56 02 58 18 03
+< 24 1d f8 e7 0a 19 00 03 7f 01 00 00 12 01 00 3a 11 a5 af 3f 00 00 00 40 00 00 00 00 00 00 00 9b c1
+
+# min flow limiter 86/601
+> 27 07 e7 f8 0a 03 56 02 59 08 22
+< 24 1d f8 e7 0a 19 00 03 7f 01 00 00 12 02 00 39 91 a5 af 3f 00 00 00 40 00 00 00 00 00 00 00 27 ec
+
+# statistics 93/1
+> 27 07 e7 f8 0a 03 5d 00 01 45 4c
+< 24 27 f8 e7 0a 23 00 00 f8 02 00 00 1c 00 00 00 05 00 00 00 01 00 00 40 c9 00 00 18 f1 00 00 18 f1 00 00 00 06 00 00 40 c9 56 7d
+
+# temperatures 93/300
+> 27 07 e7 f8 0a 03 5d 01 2c 83 b2
+< 24 18 f8 e7 0a 14 00 02 16 02 00 00 0d 41 80 6e ed 42 13 5c 29 41 c9 d7 0a 01 31 6e
+
+# energy 87/1
+> 27 07 e7 f8 0a 03 57 00 01 82 8d
+< 24 25 f8 e7 0a 21 00 00 e8 01 00 00 1a 40 fd f0 f8 30 09 00 00 40 88 3b 00 00 01 40 88 3b 00 40 fd f0 f8 30 09 00 00 d5 a5
+
+# panel setting 86/350
+> 27 07 e7 f8 0a 03 56 01 5e 2d 96
+< 24 0c f8 e7 0a 08 00 03 64 01 00 00 01 01 17 41

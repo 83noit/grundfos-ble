@@ -1,0 +1,15 @@
+# Recorded from an ALPHA2 GO (2026-11-07) through an ESPHome Bluetooth proxy.
+# One '<' line per BLE notification.
+# Display at the time: flow and head read off the pump's panel matched the decoded values.
+
+# flow/head (18:37:49.401+00:00 UTC)
+> 27 07 e7 f8 0a 03 5d 01 22 62 7c
+< 24 2f f8 e7 0a 2b 00 02 35 02 00 00 24 39 cf c6 18 44 b5 b8
+< 95 7f ff ff ff 7f ff ff ff 7f ff ff ff 7f ff ff ff 3f b6 9d
+< 1b 3e 17 d7 8b 41 38 6b 7e 57 c7
+
+# power (18:37:52.402+00:00 UTC)
+> 27 07 e7 f8 0a 03 57 00 45 8a cd
+< 24 34 f8 e7 0a 30 00 01 00 03 00 00 29 43 6b 3a a0 43 a6 55
+< 00 3d 1c 8e 66 40 80 5c 00 40 7e e7 00 44 cd 0f 50 ff c0 00
+< 00 ff c0 00 00 42 30 00 00 00 00 00 00 00 9c bc
