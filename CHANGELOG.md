@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.1] - 2026-11-11
 
 ### Added
 
@@ -40,4 +40,5 @@ All notable changes to this project are documented here. The format follows
 - `grundfos_ble.testing`: a replay transport, a fixture format for recorded frames, and the
   recorded ALPHA2 GO frames as `FIXTURES`.
 
+[0.1.1]: https://github.com/83noit/grundfos-ble/releases/tag/v0.1.1
 [0.1.0]: https://github.com/83noit/grundfos-ble/releases/tag/v0.1.0
