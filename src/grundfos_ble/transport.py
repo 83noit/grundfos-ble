@@ -6,10 +6,12 @@ holds a bond, SMP pairing otherwise), subscribes to the GENI characteristic, and
 one request at a time: write the frame in 20-byte pieces, wait for the reassembled reply.
 
 Grundfos pumps accept SMP pairing only for about three seconds after their Bluetooth button
-is pressed; outside that window ESP-IDF reports reason 82, which becomes
-:class:`~grundfos_ble.exceptions.PairingRequired`. How a pump behaves when it has dropped a
-bond the adapter still holds has not been measured, so callers should also watch
-``reply_seen``: a link that came up but never answered is suspicious when it keeps happening.
+is pressed; outside that window ESP-IDF reports reason 82 and BlueZ ``AuthenticationFailed``,
+both of which become :class:`~grundfos_ble.exceptions.PairingRequired`. A local BlueZ adapter
+also needs a pairing agent, which :mod:`grundfos_ble.bluez` registers around the connection.
+How a pump behaves when it has dropped a bond the adapter still holds has not been measured, so
+callers should also watch ``reply_seen``: a link that came up but never answered is suspicious
+when it keeps happening.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from bleak.exc import BleakError
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 
 from grundfos_ble.advertisement import GENI_CHARACTERISTIC_UUID
+from grundfos_ble.bluez import bluez_pairing_agent
 from grundfos_ble.exceptions import (
     ConnectionLost,
     GrundfosConnectionError,
@@ -58,6 +61,8 @@ Others seen in the same message (timeouts, busy, internal errors) are transient.
 """
 
 _PAIRING_FAILED = re.compile(r"[Pp]airing failed\D*?(-?\d+)")
+BLUEZ_AUTHENTICATION_FAILED: Final = "org.bluez.Error.AuthenticationFailed"
+"""BlueZ's report of a refused pairing; with the pairing agent up it means a missed window."""
 _LINK_ERRORS: Final = (BleakError, EOFError, BrokenPipeError, AttributeError, NotImplementedError)
 """What bleak backends raise for link trouble; bleak-retry-connector retries most of these."""
 
@@ -165,7 +170,10 @@ class BleTransport:
             if attempt:
                 await asyncio.sleep(RETRY_DELAY)
             try:
-                async with asyncio.timeout(self._connect_timeout):
+                async with (
+                    asyncio.timeout(self._connect_timeout),
+                    bluez_pairing_agent(self._device),
+                ):
                     return await establish_connection(
                         BleakClientWithServiceCache,
                         self._device,
@@ -276,4 +284,6 @@ class BleTransport:
             if code in PAIRING_REFUSED_CODES:
                 return PairingRequired(f"{self._name}: {text}", code)
             return GrundfosConnectionError(f"{self._name}: {text}", code)
+        if BLUEZ_AUTHENTICATION_FAILED in text:
+            return PairingRequired(f"{self._name}: {text}")
         return GrundfosConnectionError(f"{self._name}: {type(err).__name__}: {text}")

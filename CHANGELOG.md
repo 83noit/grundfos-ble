@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `remove_bluez_bond` makes BlueZ forget a bond, so a pump that has lost its half can be paired
+  again through a local adapter; until now BlueZ kept reconnecting with the old keys.
+
+### Fixed
+
+- Pairing through a local BlueZ adapter failed with `org.bluez.Error.AuthenticationFailed`:
+  BlueZ refuses the pump's Just Works request when no pairing agent is registered. `BleTransport`
+  now registers a `NoInputNoOutput` agent while it pairs a device BlueZ holds no bond for, and
+  BlueZ's `AuthenticationFailed` raises `PairingRequired`.
+
 ## [0.1.0] - 2026-11-09
 
 ### Added

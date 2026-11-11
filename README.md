@@ -23,9 +23,10 @@ used only to identify compatible pumps.
 - Decodes the pump's advertisement (service UUID `0xFE5D`), including the flag that says the
   Bluetooth button was just pressed.
 - Connects through bleak and bleak-retry-connector, pairs on every connection, and talks GENIbus
-  over the single GENI characteristic. Only ESPHome Bluetooth proxies have been tested. Other
-  bleak backends may connect, but BlueZ and WinRT pairing failures are not recognised as
-  `PairingRequired` and surface as `GrundfosConnectionError`.
+  over the single GENI characteristic. Only ESPHome Bluetooth proxies have been tested. On a
+  local BlueZ adapter it registers the pairing agent BlueZ needs while it pairs; that path is
+  untested on hardware here. WinRT pairing failures are not recognised as `PairingRequired` and
+  surface as `GrundfosConnectionError`.
 - Reads flow, head, power, voltage, current, speed, electronics temperature, control and
   operation mode, setpoint, factory limits, the panel setting, flow limiters, AutoNight, alarms,
   warnings and, where the pump has them, statistics, temperatures and energy. The stored panel
@@ -87,8 +88,10 @@ only for about three seconds after its Bluetooth button is pressed. Once paired,
 on the adapter or proxy that paired. When tested, the pump held at least two bonds at once, a
 phone and an ESPHome proxy. Every connection must still call `pair()`; with a bond that is a quick
 re-encrypt. `PairingRequired` is raised when the pump refuses pairing (ESP-IDF reason 82, seen
-through ESPHome proxies). A link that connects but never answers shows up as `reply_seen` staying
-false. A pump losing a bond has never been observed, so how that looks is unknown.
+through ESPHome proxies, or BlueZ `AuthenticationFailed`). A link that connects but never answers
+shows up as `reply_seen` staying false. A pump losing a bond has never been observed, so how that
+looks is unknown. A local BlueZ adapter would keep reconnecting with the dropped bond and never
+pair again, so call `remove_bluez_bond(device)` before re-pairing through one.
 
 ## Protocol
 

@@ -60,9 +60,10 @@ class PairingRequired(GrundfosConnectionError):
     """The pump refused pairing.
 
     The adapter or proxy holds no bond the pump accepts and the pump's Bluetooth button was
-    not pressed within the pairing window. Raised only for ESP-IDF SMP failure reason 82
-    ("pairing not supported"), as reported through ESPHome proxies; other backends' pairing
-    failures surface as :class:`GrundfosConnectionError`. The caller has to run the pairing
+    not pressed within the pairing window. Raised for ESP-IDF SMP failure reason 82
+    ("pairing not supported"), as reported through ESPHome proxies, and for BlueZ's
+    ``AuthenticationFailed`` on a local Linux adapter; other backends' pairing failures
+    surface as :class:`GrundfosConnectionError`. The caller has to run the pairing
     procedure again: press the button, connect within ~3 s, pair.
     """
 
