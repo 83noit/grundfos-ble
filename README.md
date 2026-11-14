@@ -89,8 +89,9 @@ on the adapter or proxy that paired. When tested, the pump held at least two bon
 phone and an ESPHome proxy. Every connection must still call `pair()`; with a bond that is a quick
 re-encrypt. `PairingRequired` is raised when the pump refuses pairing (ESP-IDF reason 82, seen
 through ESPHome proxies, or BlueZ `AuthenticationFailed`). A link that connects but never answers
-shows up as `reply_seen` staying false. A pump losing a bond has never been observed, so how that
-looks is unknown. A local BlueZ adapter would keep reconnecting with the dropped bond and never
+shows up as `reply_seen` staying false; outside pairing that points at the radio, not the bond,
+so do not treat it as a reason to re-pair. A pump losing a bond has never been observed, so how
+that looks is unknown. A local BlueZ adapter would keep reconnecting with the dropped bond and never
 pair again, so call `remove_bluez_bond(device)` before re-pairing through one.
 
 ## Protocol

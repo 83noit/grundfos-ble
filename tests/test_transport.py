@@ -343,3 +343,8 @@ async def test_error_reply_is_a_protocol_error(fake_establish: FakeClient) -> No
     await transport.connect()
     with pytest.raises(ProtocolError, match="error reply"):
         await transport.request(request)
+
+
+def test_a_reply_outlasts_the_link_supervision_timeout() -> None:
+    """A stalled link that recovers within ~6 s must still answer (ha-grundfos-ble#3)."""
+    assert transport_module.DEFAULT_REQUEST_TIMEOUT > 6.0

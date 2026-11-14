@@ -9,9 +9,10 @@ Grundfos pumps accept SMP pairing only for about three seconds after their Bluet
 is pressed; outside that window ESP-IDF reports reason 82 and BlueZ ``AuthenticationFailed``,
 both of which become :class:`~grundfos_ble.exceptions.PairingRequired`. A local BlueZ adapter
 also needs a pairing agent, which :mod:`grundfos_ble.bluez` registers around the connection.
-How a pump behaves when it has dropped a bond the adapter still holds has not been measured, so
-callers should also watch ``reply_seen``: a link that came up but never answered is suspicious
-when it keeps happening.
+How a pump behaves when it has dropped a bond the adapter still holds has not been measured. A
+link that comes up and then never answers is no evidence of it: unreliable adapters do that with
+a sound bond. ``reply_seen`` tells the two apart only within a pairing attempt, where silence
+means the button window was missed.
 """
 
 from __future__ import annotations
@@ -48,8 +49,12 @@ _LOGGER = logging.getLogger(__name__)
 WRITE_CHUNK: Final = 20
 """The pump ignores writes longer than this, whatever MTU was negotiated."""
 CHUNK_SPACING: Final = 0.025
-DEFAULT_REQUEST_TIMEOUT: Final = 2.0
-"""Seconds to wait for a whole reply, write included; a healthy pump answers well inside it."""
+DEFAULT_REQUEST_TIMEOUT: Final = 8.0
+"""Seconds to wait for a whole reply, write included; a healthy pump answers well inside it.
+
+Kept above the ~6 s link supervision timeout, as yalexs-ble does: a link that stalls and
+recovers then answers late instead of being torn down, and a dead one reads as ConnectionLost.
+"""
 DEFAULT_CONNECT_TIMEOUT: Final = 10.0
 """Seconds allowed for one connect-and-pair attempt."""
 RETRY_DELAY: Final = 0.25

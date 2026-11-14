@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Requests wait up to 8 s for a reply instead of 2 s, above the link supervision timeout. A link
+  that stalls and recovers now answers late instead of being dropped, and a dead link reads as
+  `ConnectionLost`.
+- A link that connects but never answers is no longer described as a sign of a lost bond:
+  unreliable adapters do that with a sound bond.
+
 ## [0.1.1] - 2026-11-11
 
 ### Added
