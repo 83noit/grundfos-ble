@@ -10,6 +10,8 @@ from unittest.mock import patch
 import pytest
 from bleak import BleakError
 from bleak.backends.device import BLEDevice
+from bleak.exc import BleakCharacteristicNotFoundError
+from bleak_retry_connector import BleakClientWithServiceCache
 
 from grundfos_ble import transport as transport_module
 from grundfos_ble.exceptions import (
@@ -370,3 +372,34 @@ async def test_each_attempt_asks_for_the_current_device() -> None:
         await transport.connect()
     assert seen == [first, first, second]  # None keeps the last device
     assert transport.device is second
+
+
+async def test_a_missing_characteristic_clears_the_service_cache() -> None:
+    class CachedClient(BleakClientWithServiceCache):
+        def __init__(self) -> None:
+            self.cleared = False
+            self.connected = True
+
+        @property
+        def is_connected(self) -> bool:
+            return self.connected
+
+        async def start_notify(self, *_args: Any, **_kwargs: Any) -> None:
+            raise BleakCharacteristicNotFoundError("geni")
+
+        async def clear_cache(self) -> bool:
+            self.cleared = True
+            return True
+
+        async def disconnect(self) -> None:
+            self.connected = False
+
+    client = CachedClient()
+    establish, _ = _establish_sequence(client)
+    with (
+        patch.object(transport_module, "establish_connection", establish),
+        pytest.raises(GrundfosConnectionError, match="not found"),
+    ):
+        await BleTransport(_device(), max_attempts=1).connect()
+    assert client.cleared
+    assert not client.connected

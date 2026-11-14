@@ -26,7 +26,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Final, Protocol
 
 from bleak import BleakClient
-from bleak.exc import BleakError
+from bleak.exc import BleakCharacteristicNotFoundError, BleakError
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 
 from grundfos_ble.advertisement import GENI_CHARACTERISTIC_UUID
@@ -169,6 +169,14 @@ class BleTransport:
         self._client = client
         try:
             await client.start_notify(GENI_CHARACTERISTIC_UUID, self._on_notify)
+        except BleakCharacteristicNotFoundError as err:
+            # The service cache is stale, as yalexs-ble also finds: drop it so that the next
+            # connection resolves the services afresh.
+            if isinstance(client, BleakClientWithServiceCache):
+                with contextlib.suppress(Exception):
+                    await client.clear_cache()
+            await self.disconnect()
+            raise self._translate(err) from err
         except (*_LINK_ERRORS, TimeoutError) as err:
             await self.disconnect()
             raise self._translate(err) from err

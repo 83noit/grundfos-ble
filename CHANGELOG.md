@@ -16,6 +16,8 @@ All notable changes to this project are documented here. The format follows
 - Requests wait up to 8 s for a reply instead of 2 s, above the link supervision timeout. A link
   that stalls and recovers now answers late instead of being dropped, and a dead link reads as
   `ConnectionLost`.
+- When the pump's characteristic is missing from the cached services, the cache is cleared so
+  that the next connection reads them afresh.
 - A link that connects but never answers is no longer described as a sign of a lost bond:
   unreliable adapters do that with a sound bond.
 
