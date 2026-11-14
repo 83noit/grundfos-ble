@@ -106,7 +106,13 @@ class Transport(Protocol):
 
 
 class BleTransport:
-    """GENIbus over one BLE connection."""
+    """GENIbus over one BLE connection.
+
+    ``device_callback``, when given, is asked for the device again before every connection
+    attempt, so a retry goes through whichever adapter or proxy now hears the pump best, as
+    bleak-retry-connector's ``ble_device_callback`` does. It may return None to keep the last
+    device.
+    """
 
     def __init__(
         self,
@@ -117,8 +123,10 @@ class BleTransport:
         connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
         request_timeout: float = DEFAULT_REQUEST_TIMEOUT,
         disconnected_callback: Callable[[], None] | None = None,
+        device_callback: Callable[[], BLEDevice | None] | None = None,
     ) -> None:
         self._device = device
+        self._device_callback = device_callback
         self._name = name or device.name or device.address
         self._max_attempts = max(1, max_attempts)
         self._connect_timeout = connect_timeout
@@ -174,6 +182,8 @@ class BleTransport:
         for attempt in range(self._max_attempts):
             if attempt:
                 await asyncio.sleep(RETRY_DELAY)
+            if self._device_callback is not None:
+                self._device = self._device_callback() or self._device
             try:
                 async with (
                     asyncio.timeout(self._connect_timeout),

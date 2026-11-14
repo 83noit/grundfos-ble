@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `BleTransport(device_callback=...)` asks for the device again before every connection attempt,
+  so a retry can go through whichever adapter or proxy now hears the pump best.
+
 ### Changed
 
 - Requests wait up to 8 s for a reply instead of 2 s, above the link supervision timeout. A link

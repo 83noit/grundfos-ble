@@ -348,3 +348,25 @@ async def test_error_reply_is_a_protocol_error(fake_establish: FakeClient) -> No
 def test_a_reply_outlasts_the_link_supervision_timeout() -> None:
     """A stalled link that recovers within ~6 s must still answer (ha-grundfos-ble#3)."""
     assert transport_module.DEFAULT_REQUEST_TIMEOUT > 6.0
+
+
+async def test_each_attempt_asks_for_the_current_device() -> None:
+    first = _device()
+    second = BLEDevice("AA:BB:CC:DD:EE:FF", "Test pump", {"source": "66:77:88:99:AA:BB"})
+    devices = iter([first, None, second])
+    seen: list[BLEDevice] = []
+
+    async def establish(_cls: Any, device: BLEDevice, _name: str, **_kwargs: Any) -> FakeClient:
+        seen.append(device)
+        if len(seen) < 3:
+            raise BleakError("no slot")
+        return FakeClient()
+
+    with (
+        patch.object(transport_module, "establish_connection", establish),
+        patch.object(transport_module, "RETRY_DELAY", 0),
+    ):
+        transport = BleTransport(first, max_attempts=3, device_callback=lambda: next(devices))
+        await transport.connect()
+    assert seen == [first, first, second]  # None keeps the last device
+    assert transport.device is second
