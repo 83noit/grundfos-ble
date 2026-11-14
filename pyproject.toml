@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "grundfos-ble"
-version = "0.1.1"
+version = "0.1.2"
 description = "Async Python library for Grundfos circulator pumps over GENIbus-on-Bluetooth LE (ALPHA2 GO first)"
 readme = "README.md"
 license = "MIT"
