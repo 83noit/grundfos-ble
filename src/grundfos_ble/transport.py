@@ -31,7 +31,7 @@ from bleak.exc import BleakCharacteristicNotFoundError, BleakError
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 
 from grundfos_ble.advertisement import GENI_CHARACTERISTIC_UUID
-from grundfos_ble.bluez import bluez_pairing_agent
+from grundfos_ble.bluez import bluez_device_path, bluez_pairing_agent
 from grundfos_ble.exceptions import (
     ConnectionLost,
     GrundfosConnectionError,
@@ -61,12 +61,13 @@ supervision timeout.
 DEFAULT_CONNECT_TIMEOUT: Final = 10.0
 """Seconds allowed for one connect-and-pair attempt."""
 SETTLE_AFTER_SUBSCRIBE: Final = 0.5
-"""Seconds to wait after subscribing before the first write.
+"""Seconds a local BlueZ link is left to settle after subscribing, before the first write.
 
-On a local BlueZ adapter Home Assistant re-tunes the link's connection interval as the connection
-completes, and bluetoothd may still be setting up GATT; a first request written into that went
-unanswered in most connections (ha-grundfos-ble#1). Other clients for these pumps pause 0.1-0.5 s
-here too. Unconfirmed as the cause.
+Home Assistant re-tunes a local link's connection interval as soon as the connection completes,
+so the subscription and first write would otherwise meet that update; a first request went
+unanswered in most connections there (ha-grundfos-ble#1). Other clients for these pumps pause
+0.1-0.5 s here too. Unconfirmed as the cause. A proxy sets its interval before connecting and
+needs no pause.
 """
 MAX_PIECES_REPORTED: Final = 8
 """Notification pieces of an unfinished reply quoted in a RequestTimeout."""
@@ -199,7 +200,8 @@ class BleTransport:
             await self.disconnect()
             raise
         _LOGGER.debug("%s: connected and subscribed (mtu %s)", self._name, client.mtu_size)
-        await asyncio.sleep(SETTLE_AFTER_SUBSCRIBE)
+        if bluez_device_path(self._device) is not None:
+            await asyncio.sleep(SETTLE_AFTER_SUBSCRIBE)
 
     async def _connect_with_retries(self) -> BleakClient:
         last: GrundfosConnectionError | None = None
@@ -220,6 +222,11 @@ class BleTransport:
                         disconnected_callback=self._on_disconnect,
                         max_attempts=1,
                         pair=True,
+                        # With bleak's own cache a local connect returns before bluetoothd has
+                        # finished setting up GATT; without it bleak waits for ServicesResolved,
+                        # which BlueZ's cache for a bonded device keeps quick. A proxy keeps its
+                        # cache: it reports the link only once encrypted and set up.
+                        use_services_cache=bluez_device_path(self._device) is None,
                     )
             except _LINK_ERRORS as err:
                 last = self._translate(err)

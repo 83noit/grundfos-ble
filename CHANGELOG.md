@@ -8,9 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- After subscribing, the transport waits 0.5 s before its first write. On a local BlueZ adapter the
-  link is re-tuned as the connection completes, and a first request written into that went
-  unanswered in most connections.
+- On a local BlueZ adapter the transport waits for BlueZ to resolve the pump's services before
+  subscribing, instead of using bleak's own cache. With the cache, a connection was handed over
+  before bluetoothd had finished setting up GATT. Proxies keep using their cache.
+- On a local BlueZ adapter the transport waits 0.5 s after subscribing before its first write.
+  Home Assistant re-tunes such a link as the connection completes, and a first request written
+  into that went unanswered in most connections. Proxies need no pause.
 - A `RequestTimeout` now says what arrived for the request: nothing, or the notification pieces
   of a reply that never completed. This tells a silent pump apart from lost notifications.
 - Requests wait up to 10 s for a reply instead of 8 s. The link supervision timeout on Home

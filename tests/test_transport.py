@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+import contextlib
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 from unittest.mock import patch
 
@@ -69,6 +70,11 @@ class FakeClient:
 
 def _device() -> BLEDevice:
     return BLEDevice("AA:BB:CC:DD:EE:FF", "Test pump", {"source": "00:11:22:33:44:55"})
+
+
+@contextlib.asynccontextmanager
+async def _no_agent(_device: BLEDevice) -> AsyncIterator[None]:
+    yield
 
 
 @pytest.fixture(autouse=True)
@@ -161,7 +167,17 @@ async def test_timeout_quotes_a_bounded_number_of_pieces(fake_establish: FakeCli
         await task
 
 
-async def test_the_link_settles_before_the_first_write(fake_establish: FakeClient) -> None:
+@pytest.mark.parametrize(
+    ("details", "expected"),
+    [
+        ({"source": "00:11:22:33:44:55"}, ["subscribe"]),
+        ({"path": "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF"}, ["subscribe", "sleep 0.5"]),
+    ],
+    ids=["proxy", "local-bluez"],
+)
+async def test_a_local_link_settles_before_the_first_write(
+    fake_establish: FakeClient, details: dict[str, Any], expected: list[str]
+) -> None:
     events: list[str] = []
 
     async def sleep(delay: float) -> None:
@@ -175,9 +191,10 @@ async def test_the_link_settles_before_the_first_write(fake_establish: FakeClien
     with (
         patch.object(transport_module, "SETTLE_AFTER_SUBSCRIBE", 0.5),
         patch.object(transport_module.asyncio, "sleep", sleep),
+        patch.object(transport_module, "bluez_pairing_agent", _no_agent),
     ):
-        await BleTransport(_device()).connect()
-    assert events == ["subscribe", "sleep 0.5"]
+        await BleTransport(BLEDevice("AA:BB:CC:DD:EE:FF", "Test pump", details)).connect()
+    assert events == expected
 
 
 async def test_not_connected() -> None:
@@ -434,6 +451,32 @@ async def test_each_attempt_asks_for_the_current_device() -> None:
         await transport.connect()
     assert seen == [first, first, second]  # None keeps the last device
     assert transport.device is second
+
+
+@pytest.mark.parametrize(
+    ("details", "cached"),
+    [
+        ({"source": "00:11:22:33:44:55"}, True),
+        ({"path": "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF", "props": {}}, False),
+    ],
+    ids=["proxy", "local-bluez"],
+)
+async def test_a_local_adapter_waits_for_resolved_services(
+    details: dict[str, Any], cached: bool
+) -> None:
+    seen: list[bool] = []
+
+    async def establish(_cls: Any, _device: BLEDevice, _name: str, **kwargs: Any) -> FakeClient:
+        seen.append(kwargs["use_services_cache"])
+        return FakeClient()
+
+    device = BLEDevice("AA:BB:CC:DD:EE:FF", "Test pump", details)
+    with (
+        patch.object(transport_module, "establish_connection", establish),
+        patch.object(transport_module, "bluez_pairing_agent", _no_agent),
+    ):
+        await BleTransport(device).connect()
+    assert seen == [cached]
 
 
 async def test_a_missing_characteristic_clears_the_service_cache() -> None:
