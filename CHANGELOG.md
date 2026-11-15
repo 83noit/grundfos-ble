@@ -14,6 +14,8 @@ All notable changes to this project are documented here. The format follows
 - The README's links are absolute, so they also work on the PyPI page, and the README carries a
   safety statement. The package summary says the release is read-only, and the project links
   include the protocol documentation.
+- `bluez_pairing_agent` is annotated as returning an `AsyncGenerator`, and bleak's BlueZ types
+  are imported only on Linux, so pyright and ty check the package cleanly on macOS and Windows.
 
 ### Added
 

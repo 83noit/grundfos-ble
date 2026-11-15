@@ -17,13 +17,18 @@ reads the D-Bus signature from the annotations when the class is defined.
 
 import contextlib
 import logging
-from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Final
+import sys
+from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
-    from bleak.backends.bluezdbus.manager import BlueZManager
     from bleak.backends.device import BLEDevice
     from dbus_fast.aio import MessageBus
+
+    if sys.platform == "linux":
+        from bleak.backends.bluezdbus.manager import BlueZManager
+    else:  # bleak's BlueZ backend refuses to import elsewhere
+        BlueZManager = Any
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,7 +49,10 @@ def bluez_device_path(device: "BLEDevice") -> str | None:
 async def _bluez_bus() -> "tuple[BlueZManager, MessageBus] | None":
     """Return bleak's BlueZ manager and its system bus, or None where there is no BlueZ."""
     try:
-        from bleak.backends.bluezdbus.manager import get_global_bluez_manager
+        # Linux only; elsewhere the import fails and lands in the except below.
+        from bleak.backends.bluezdbus.manager import (
+            get_global_bluez_manager,  # pyright: ignore[reportAttributeAccessIssue]
+        )
 
         manager = await get_global_bluez_manager()
     except Exception as err:  # no BlueZ here
@@ -75,7 +83,7 @@ async def _call(
             body=body,
         )
     )
-    if reply is not None and reply.message_type == MessageType.ERROR:
+    if reply.message_type == MessageType.ERROR:
         raise DBusError(reply.error_name or "unknown", str(reply.body))
 
 
@@ -104,7 +112,7 @@ async def remove_bluez_bond(device: "BLEDevice") -> bool:
 
 
 @contextlib.asynccontextmanager
-async def bluez_pairing_agent(device: "BLEDevice") -> AsyncIterator[None]:
+async def bluez_pairing_agent(device: "BLEDevice") -> AsyncGenerator[None]:
     """Hold a Just Works agent while ``device`` is connected and paired through BlueZ.
 
     Does nothing when the device was not seen by a local BlueZ adapter (an ESPHome proxy, or

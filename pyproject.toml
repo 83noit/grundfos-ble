@@ -39,7 +39,7 @@ Changelog = "https://github.com/83noit/grundfos-ble/blob/main/CHANGELOG.md"
 [dependency-groups]
 dev = [
     "pytest>=9",
-    "pytest-asyncio>=1.0",
+    "pytest-asyncio>=1.4.1",
     "pytest-cov>=7",
     "ruff>=0.14",
     "mypy>=1.19",
@@ -57,7 +57,6 @@ include = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -92,7 +91,7 @@ known-first-party = ["grundfos_ble"]
 python_version = "3.13"
 strict = true
 warn_unreachable = true
-show_error_codes = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 packages = ["grundfos_ble"]
 mypy_path = "src"
 
@@ -100,11 +99,15 @@ mypy_path = "src"
 module = ["tests.*"]
 disallow_untyped_defs = false
 
-[tool.pytest.ini_options]
+[tool.pytest]
+minversion = "9.0"
+strict = true
+addopts = ["-ra", "-q"]
+filterwarnings = ["error"]
+log_level = "INFO"
+testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-testpaths = ["tests"]
-addopts = "-q --strict-markers"
 
 [tool.coverage.run]
 source = ["grundfos_ble"]
