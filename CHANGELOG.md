@@ -11,6 +11,9 @@ All notable changes to this project are documented here. The format follows
 - The "connected and subscribed" debug line no longer reports the MTU. On a local BlueZ adapter
   reading it made bleak warn `Using default MTU value` and report its default of 23, not the
   negotiated value. The transport writes 20-byte pieces whatever the MTU.
+- The README's links are absolute, so they also work on the PyPI page, and the README carries a
+  safety statement. The package summary says the release is read-only, and the project links
+  include the protocol documentation.
 
 ### Added
 

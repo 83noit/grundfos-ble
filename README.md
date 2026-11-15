@@ -3,7 +3,7 @@
 [![CI](https://github.com/83noit/grundfos-ble/actions/workflows/ci.yml/badge.svg)](https://github.com/83noit/grundfos-ble/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/grundfos-ble)](https://pypi.org/project/grundfos-ble/)
 [![Python](https://img.shields.io/pypi/pyversions/grundfos-ble)](https://pypi.org/project/grundfos-ble/)
-[![License: MIT](https://img.shields.io/github/license/83noit/grundfos-ble)](LICENSE)
+[![License: MIT](https://img.shields.io/github/license/83noit/grundfos-ble)](https://github.com/83noit/grundfos-ble/blob/main/LICENSE)
 
 Async, typed Python library for Grundfos circulator pumps that speak **GENIbus over
 Bluetooth LE**. The only supported pump today is the **ALPHA2 GO**. The framing layer is
@@ -17,6 +17,11 @@ The library was written for use under Home Assistant, but it does not depend on 
 
 This project is not affiliated with, endorsed by or supported by Grundfos. Product names are
 used only to identify compatible pumps.
+
+**Safety.** A circulator pump is part of a heating system. This release only reads, but later
+releases will be able to change how the pump runs, and wrong settings can stop circulation.
+The library is tested on one ALPHA2 GO and comes with no warranty (see the
+[licence](https://github.com/83noit/grundfos-ble/blob/main/LICENSE)). Use it at your own risk.
 
 ## What it does
 
@@ -33,7 +38,7 @@ used only to identify compatible pumps.
   presets have no typed reader. Fetch them with `GrundfosPump.get_object` and
   `registry.alpha2go.panel_preset`.
 - Does **not** support writes yet. The write methods (control mode, setpoint, limiters, AutoNight,
-  start/stop, alarm reset) raise `NotSupported`. See [Known limitations](#known-limitations).
+  start/stop, alarm reset) raise `NotSupported`. See Known limitations below.
 
 ## Install
 
@@ -165,4 +170,4 @@ research made the work possible:
 
 ## Licence
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](https://github.com/83noit/grundfos-ble/blob/main/LICENSE).
