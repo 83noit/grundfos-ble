@@ -2,20 +2,10 @@
 
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
-[Semantic Versioning](https://semver.org/).
+[Semantic Versioning](https://semver.org/). Before 1.0, a minor release may break the API or
+change defaults; a patch release only fixes bugs.
 
 ## [Unreleased]
-
-### Changed
-
-- The "connected and subscribed" debug line no longer reports the MTU. On a local BlueZ adapter
-  reading it made bleak warn `Using default MTU value` and report its default of 23, not the
-  negotiated value. The transport writes 20-byte pieces whatever the MTU.
-- The README's links are absolute, so they also work on the PyPI page, and the README carries a
-  safety statement. The package summary says the release is read-only, and the project links
-  include the protocol documentation.
-- `bluez_pairing_agent` is annotated as returning an `AsyncGenerator`, and bleak's BlueZ types
-  are imported only on Linux, so pyright and ty check the package cleanly on macOS and Windows.
 
 ### Added
 
@@ -27,6 +17,17 @@ All notable changes to this project are documented here. The format follows
 - `THIRD_PARTY_NOTICES.md`, shipped in the wheel and the sdist, with the copyright and MIT
   notice of alpha-hwr, from which the BlueZ pairing agent is adapted. The README said no code
   from the acknowledged projects was used; that has not been true since 0.1.1.
+
+### Changed
+
+- The "connected and subscribed" debug line no longer reports the MTU. On a local BlueZ adapter
+  reading it made bleak warn `Using default MTU value` and report its default of 23, not the
+  negotiated value. The transport writes 20-byte pieces whatever the MTU.
+- The README's links are absolute, so they also work on the PyPI page, and the README carries a
+  safety statement. The package summary says the release is read-only, and the project links
+  include the protocol documentation.
+- `bluez_pairing_agent` is annotated as returning an `AsyncGenerator`, and bleak's BlueZ types
+  are imported only on Linux, so pyright and ty check the package cleanly on macOS and Windows.
 
 ### Removed
 
@@ -41,8 +42,8 @@ All notable changes to this project are documented here. The format follows
   leaves out `bluetooth-adapters` on Python 3.14 but still imports it, so the floor is now
   4.7.1 (and `bleak` 3.0.2, which it needs). `dbus-fast`, which the BlueZ pairing agent imports,
   is now declared on Linux at 4.0 or later; older versions lack `dbus_fast.annotations`.
-- `BleTransport.request(..., timeout=0)` waited for the transport's default
-  timeout instead of timing out at once.
+- `BleTransport.request(..., timeout=0)` waited for the transport's default timeout instead of
+  timing out at once.
 
 ## [0.1.3] - 2026-11-15
 
@@ -113,7 +114,7 @@ All notable changes to this project are documented here. The format follows
   recorded ALPHA2 GO frames as `FIXTURES`.
 
 [Unreleased]: https://github.com/83noit/grundfos-ble/compare/v0.1.3...HEAD
-[0.1.3]: https://github.com/83noit/grundfos-ble/releases/tag/v0.1.3
-[0.1.2]: https://github.com/83noit/grundfos-ble/releases/tag/v0.1.2
-[0.1.1]: https://github.com/83noit/grundfos-ble/releases/tag/v0.1.1
+[0.1.3]: https://github.com/83noit/grundfos-ble/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/83noit/grundfos-ble/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/83noit/grundfos-ble/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/83noit/grundfos-ble/releases/tag/v0.1.0
