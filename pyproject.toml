@@ -8,7 +8,7 @@ version = "0.1.3"
 description = "Async Python library for Grundfos circulator pumps over GENIbus-on-Bluetooth LE (ALPHA2 GO first)"
 readme = "README.md"
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.13"
 authors = [{ name = "83noit" }]
 keywords = ["grundfos", "alpha2", "genibus", "bluetooth", "ble", "pump", "home-assistant"]
@@ -50,7 +50,9 @@ dev = [
 packages = ["src/grundfos_ble"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/tests", "/docs", "/README.md", "/CHANGELOG.md", "/LICENSE"]
+include = [
+    "/src", "/tests", "/docs", "/README.md", "/CHANGELOG.md", "/LICENSE", "/THIRD_PARTY_NOTICES.md",
+]
 
 [tool.ruff]
 line-length = 100

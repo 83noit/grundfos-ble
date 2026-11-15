@@ -8,7 +8,8 @@ is why pairing from it works. While the pump is being paired, this module regist
 ``NoInputNoOutput`` agent as the default, accepts requests for that pump and rejects the rest.
 It can also remove BlueZ's half of a bond the pump no longer honours, so pairing runs again.
 
-Adapted from alpha-hwr's ``core/pairing_agent.py`` (MIT, https://github.com/eman/alpha-hwr).
+Adapted from alpha-hwr's ``src/alpha_hwr/core/pairing_agent.py`` (MIT, Copyright (c) 2026
+Emmanuel Levijarvi, https://github.com/eman/alpha-hwr); its notice is in THIRD_PARTY_NOTICES.md.
 
 This module does not use ``from __future__ import annotations``: dbus_fast's ``@method()``
 reads the D-Bus signature from the annotations when the class is defined.

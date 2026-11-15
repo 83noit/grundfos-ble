@@ -12,6 +12,12 @@ All notable changes to this project are documented here. The format follows
   reading it made bleak warn `Using default MTU value` and report its default of 23, not the
   negotiated value. The transport writes 20-byte pieces whatever the MTU.
 
+### Added
+
+- `THIRD_PARTY_NOTICES.md`, shipped in the wheel and the sdist, with the copyright and MIT
+  notice of alpha-hwr, from which the BlueZ pairing agent is adapted. The README said no code
+  from the acknowledged projects was used; that has not been true since 0.1.1.
+
 ### Removed
 
 - The upper caps on `bleak` (`<4`) and `bleak-retry-connector` (`<5`). Home Assistant installs
