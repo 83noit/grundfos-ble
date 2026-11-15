@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
@@ -16,6 +17,8 @@ from grundfos_ble import bluez
 from grundfos_ble import transport as transport_module
 from grundfos_ble.exceptions import PairingRequired
 from grundfos_ble.transport import BleTransport
+
+pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="BlueZ runs on Linux only")
 
 PATH = "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF"
 
