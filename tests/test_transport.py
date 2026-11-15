@@ -410,8 +410,8 @@ async def test_error_reply_is_a_protocol_error(fake_establish: FakeClient) -> No
 
 
 def test_a_reply_outlasts_the_link_supervision_timeout() -> None:
-    """A stalled link that recovers within ~6 s must still answer (ha-grundfos-ble#3)."""
-    assert transport_module.DEFAULT_REQUEST_TIMEOUT > 6.0
+    """A stalled link that recovers within 8 s must still answer (ha-grundfos-ble#3)."""
+    assert transport_module.DEFAULT_REQUEST_TIMEOUT > 8.0
 
 
 async def test_each_attempt_asks_for_the_current_device() -> None:

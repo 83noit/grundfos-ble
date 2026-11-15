@@ -13,6 +13,8 @@ All notable changes to this project are documented here. The format follows
   unanswered in most connections.
 - A `RequestTimeout` now says what arrived for the request: nothing, or the notification pieces
   of a reply that never completed. This tells a silent pump apart from lost notifications.
+- Requests wait up to 10 s for a reply instead of 8 s. The link supervision timeout on Home
+  Assistant and ESPHome proxies is 8 s, not the ~6 s assumed before, so 8 s did not stay above it.
 
 ## [0.1.2] - 2026-11-14
 

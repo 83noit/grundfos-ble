@@ -50,11 +50,13 @@ _LOGGER = logging.getLogger(__name__)
 WRITE_CHUNK: Final = 20
 """The pump ignores writes longer than this, whatever MTU was negotiated."""
 CHUNK_SPACING: Final = 0.025
-DEFAULT_REQUEST_TIMEOUT: Final = 8.0
+DEFAULT_REQUEST_TIMEOUT: Final = 10.0
 """Seconds to wait for a whole reply, write included; a healthy pump answers well inside it.
 
-Kept above the ~6 s link supervision timeout, as yalexs-ble does: a link that stalls and
-recovers then answers late instead of being torn down, and a dead one reads as ConnectionLost.
+Kept above the link supervision timeout, as yalexs-ble does: a link that stalls and recovers
+then answers late instead of being torn down, and a dead one reads as ConnectionLost. Home
+Assistant (habluetooth on BlueZ) and ESPHome proxies both run an established link with an 8 s
+supervision timeout.
 """
 DEFAULT_CONNECT_TIMEOUT: Final = 10.0
 """Seconds allowed for one connect-and-pair attempt."""
