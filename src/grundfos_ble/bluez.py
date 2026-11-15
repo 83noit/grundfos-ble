@@ -49,8 +49,13 @@ async def _bluez_bus() -> "tuple[BlueZManager, MessageBus] | None":
     except Exception as err:  # no BlueZ here
         _LOGGER.debug("BlueZ unavailable: %s", err)
         return None
-    bus = manager._bus  # noqa: SLF001 - bleak's own system bus; BlueZ ties agents to it
-    return None if bus is None else (manager, bus)
+    # bleak's own system bus, which BlueZ ties agents to. It is private, so a bleak release
+    # that renames it turns pairing through a local adapter back into a plain Pair call.
+    bus: MessageBus | None = getattr(manager, "_bus", None)
+    if bus is None:
+        _LOGGER.debug("bleak's BlueZ manager has no system bus to register an agent on")
+        return None
+    return manager, bus
 
 
 async def _call(

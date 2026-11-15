@@ -41,7 +41,8 @@ used only to identify compatible pumps.
 pip install grundfos-ble
 ```
 
-Python 3.13 or newer; depends on `bleak>=3` and `bleak-retry-connector>=4`.
+Python 3.13 or newer; depends on `bleak>=3.0.2` and `bleak-retry-connector>=4.7.1`
+(and `dbus-fast>=4` on Linux).
 
 ## Usage
 

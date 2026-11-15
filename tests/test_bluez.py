@@ -102,6 +102,13 @@ async def test_agent_is_skipped(device: BLEDevice, manager: FakeManager) -> None
     assert manager._bus is None or not manager._bus.calls
 
 
+async def test_agent_is_skipped_when_bleak_renames_its_bus() -> None:
+    manager = SimpleNamespace(is_paired=lambda _path: False)
+    with _manager(manager):
+        async with bluez.bluez_pairing_agent(_bluez_device()):
+            pass
+
+
 async def test_no_bluez_still_pairs() -> None:
     async def unavailable() -> None:
         raise BleakError("no system bus")

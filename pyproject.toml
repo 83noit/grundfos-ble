@@ -24,8 +24,9 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "bleak>=3.0,<4",
-    "bleak-retry-connector>=4.0,<5",
+    "bleak>=3.0.2",
+    "bleak-retry-connector>=4.7.1",
+    "dbus-fast>=4.0; sys_platform == 'linux'",
 ]
 
 [project.urls]
@@ -41,6 +42,8 @@ dev = [
     "pytest-cov>=7",
     "ruff>=0.14",
     "mypy>=1.19",
+    # bluez.py imports dbus-fast on Linux only; mypy and the BlueZ tests need it everywhere.
+    "dbus-fast>=4.0",
 ]
 
 [tool.hatch.build.targets.wheel]

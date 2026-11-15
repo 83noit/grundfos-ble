@@ -12,6 +12,20 @@ All notable changes to this project are documented here. The format follows
   reading it made bleak warn `Using default MTU value` and report its default of 23, not the
   negotiated value. The transport writes 20-byte pieces whatever the MTU.
 
+### Removed
+
+- The upper caps on `bleak` (`<4`) and `bleak-retry-connector` (`<5`). Home Assistant installs
+  its own pins, and a cap would stop the integration loading when it moves to a new major. If
+  bleak drops the private bus the pairing agent uses, pairing through a local BlueZ adapter
+  goes ahead without the agent instead of failing.
+
+### Fixed
+
+- The declared dependencies now install a working library. `bleak-retry-connector` 4.0 to 4.6
+  leaves out `bluetooth-adapters` on Python 3.14 but still imports it, so the floor is now
+  4.7.1 (and `bleak` 3.0.2, which it needs). `dbus-fast`, which the BlueZ pairing agent imports,
+  is now declared on Linux at 4.0 or later; older versions lack `dbus_fast.annotations`.
+
 ## [0.1.3] - 2026-11-15
 
 ### Changed
