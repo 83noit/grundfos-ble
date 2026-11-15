@@ -264,7 +264,7 @@ class BleTransport:
             self._pending = future
             frame = telegram.encode()
             try:
-                async with asyncio.timeout(timeout or self._request_timeout):
+                async with asyncio.timeout(self._request_timeout if timeout is None else timeout):
                     await self._write(client, frame)
                     reply = await future
             except TimeoutError as err:
