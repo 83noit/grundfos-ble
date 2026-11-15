@@ -38,7 +38,6 @@ class FakeClient:
         self.replies = replies or {}
         self.writes: list[bytes] = []
         self.is_connected = True
-        self.mtu_size = 65
         self.notify_cb: Callable[[Any, bytearray], None] | None = None
         self.disconnected_callback: Callable[[Any], None] | None = None
         self.auto_reply = True

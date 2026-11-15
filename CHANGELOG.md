@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- The "connected and subscribed" debug line no longer reports the MTU. On a local BlueZ adapter
+  reading it made bleak warn `Using default MTU value` and report its default of 23, not the
+  negotiated value. The transport writes 20-byte pieces whatever the MTU.
+
 ## [0.1.3] - 2026-11-15
 
 ### Changed
@@ -72,6 +80,7 @@ All notable changes to this project are documented here. The format follows
 - `grundfos_ble.testing`: a replay transport, a fixture format for recorded frames, and the
   recorded ALPHA2 GO frames as `FIXTURES`.
 
+[Unreleased]: https://github.com/83noit/grundfos-ble/compare/v0.1.3...HEAD
 [0.1.3]: https://github.com/83noit/grundfos-ble/releases/tag/v0.1.3
 [0.1.2]: https://github.com/83noit/grundfos-ble/releases/tag/v0.1.2
 [0.1.1]: https://github.com/83noit/grundfos-ble/releases/tag/v0.1.1

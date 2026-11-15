@@ -199,7 +199,9 @@ class BleTransport:
         except BaseException:
             await self.disconnect()
             raise
-        _LOGGER.debug("%s: connected and subscribed (mtu %s)", self._name, client.mtu_size)
+        # No MTU here: bleak on BlueZ only knows it after a private call, warns when asked and
+        # reports its default of 23. The transport writes 20-byte pieces whatever it is.
+        _LOGGER.debug("%s: connected and subscribed", self._name)
         if bluez_device_path(self._device) is not None:
             await asyncio.sleep(SETTLE_AFTER_SUBSCRIBE)
 
