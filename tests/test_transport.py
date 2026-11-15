@@ -71,6 +71,12 @@ def _device() -> BLEDevice:
     return BLEDevice("AA:BB:CC:DD:EE:FF", "Test pump", {"source": "00:11:22:33:44:55"})
 
 
+@pytest.fixture(autouse=True)
+def no_settle():
+    with patch.object(transport_module, "SETTLE_AFTER_SUBSCRIBE", 0):
+        yield
+
+
 @pytest.fixture
 def fake_establish():
     client = FakeClient()
@@ -114,8 +120,64 @@ async def test_timeout(fake_establish: FakeClient) -> None:
     fake_establish.auto_reply = False
     transport = BleTransport(_device(), request_timeout=0.01)
     await transport.connect()
-    with pytest.raises(RequestTimeout):
+    with pytest.raises(RequestTimeout, match=r"no reply to .*; nothing received$"):
         await transport.request(Telegram.request(get_request(ObjectRef(93, 290))))
+
+
+async def test_timeout_quotes_the_pieces_of_an_unfinished_reply(
+    fake_establish: FakeClient, measured_2026_11_09: list[Exchange]
+) -> None:
+    """Lost notifications and a silent pump look alike unless the pieces are kept."""
+    reply = measured_2026_11_09[0].reply
+    fake_establish.auto_reply = False
+    transport = BleTransport(_device(), request_timeout=0.01)
+    await transport.connect()
+    assert fake_establish.notify_cb is not None
+    fake_establish.notify_cb(None, bytearray(reply[:20]))  # left over: not quoted
+    request = transport.request(Telegram.request(get_request(ObjectRef(93, 290))))
+    task = asyncio.ensure_future(request)
+    await asyncio.sleep(0)
+    fake_establish.notify_cb(None, bytearray(reply[:20]))
+    fake_establish.notify_cb(None, bytearray(reply[40:]))
+    with pytest.raises(RequestTimeout) as caught:
+        await task
+    assert str(caught.value).endswith(
+        f"; 2 piece(s) received: {reply[:20].hex(' ')} | {reply[40:].hex(' ')}"
+    )
+
+
+async def test_timeout_quotes_a_bounded_number_of_pieces(fake_establish: FakeClient) -> None:
+    fake_establish.auto_reply = False
+    transport = BleTransport(_device(), request_timeout=0.01)
+    await transport.connect()
+    task = asyncio.ensure_future(
+        transport.request(Telegram.request(get_request(ObjectRef(93, 290))))
+    )
+    await asyncio.sleep(0)
+    assert fake_establish.notify_cb is not None
+    for _ in range(transport_module.MAX_PIECES_REPORTED + 1):
+        fake_establish.notify_cb(None, bytearray(b"\x00"))
+    with pytest.raises(RequestTimeout, match=r"9 piece\(s\) received: (00 \| ){8}\.\.\.$"):
+        await task
+
+
+async def test_the_link_settles_before_the_first_write(fake_establish: FakeClient) -> None:
+    events: list[str] = []
+
+    async def sleep(delay: float) -> None:
+        events.append(f"sleep {delay}")
+
+    async def start_notify(_char: str, callback: Callable[[Any, bytearray], None]) -> None:
+        events.append("subscribe")
+        fake_establish.notify_cb = callback
+
+    fake_establish.start_notify = start_notify  # type: ignore[method-assign]
+    with (
+        patch.object(transport_module, "SETTLE_AFTER_SUBSCRIBE", 0.5),
+        patch.object(transport_module.asyncio, "sleep", sleep),
+    ):
+        await BleTransport(_device()).connect()
+    assert events == ["subscribe", "sleep 0.5"]
 
 
 async def test_not_connected() -> None:

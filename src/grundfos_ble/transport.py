@@ -2,8 +2,9 @@
 
 The transport takes a ``BLEDevice`` from the caller and never scans. On every connection it
 pairs (on an ESPHome proxy this is "start encryption": a re-encrypt when the proxy already
-holds a bond, SMP pairing otherwise), subscribes to the GENI characteristic, and then runs
-one request at a time: write the frame in 20-byte pieces, wait for the reassembled reply.
+holds a bond, SMP pairing otherwise), subscribes to the GENI characteristic, lets the link
+settle, and then runs one request at a time: write the frame in 20-byte pieces, wait for the
+reassembled reply.
 
 Grundfos pumps accept SMP pairing only for about three seconds after their Bluetooth button
 is pressed; outside that window ESP-IDF reports reason 82 and BlueZ ``AuthenticationFailed``,
@@ -57,6 +58,16 @@ recovers then answers late instead of being torn down, and a dead one reads as C
 """
 DEFAULT_CONNECT_TIMEOUT: Final = 10.0
 """Seconds allowed for one connect-and-pair attempt."""
+SETTLE_AFTER_SUBSCRIBE: Final = 0.5
+"""Seconds to wait after subscribing before the first write.
+
+On a local BlueZ adapter Home Assistant re-tunes the link's connection interval as the connection
+completes, and bluetoothd may still be setting up GATT; a first request written into that went
+unanswered in most connections (ha-grundfos-ble#1). Other clients for these pumps pause 0.1-0.5 s
+here too. Unconfirmed as the cause.
+"""
+MAX_PIECES_REPORTED: Final = 8
+"""Notification pieces of an unfinished reply quoted in a RequestTimeout."""
 RETRY_DELAY: Final = 0.25
 
 PAIRING_REFUSED_CODES: Final = frozenset({82})
@@ -136,6 +147,7 @@ class BleTransport:
         self._lock = asyncio.Lock()
         self._pending: asyncio.Future[bytes] | None = None
         self._assembler = FrameAssembler(replies_only=True)
+        self._pieces: list[bytes] = []
         self._reply_seen = False
         self.last_frames: deque[tuple[str, bytes]] = deque(maxlen=32)
         """Recent traffic as ("tx" | "rx", frame) for diagnostics and fixture capture."""
@@ -164,6 +176,7 @@ class BleTransport:
         if self.is_connected:
             return
         self._assembler.reset()
+        self._pieces.clear()
         self._reply_seen = False
         client = await self._connect_with_retries()
         self._client = client
@@ -184,6 +197,7 @@ class BleTransport:
             await self.disconnect()
             raise
         _LOGGER.debug("%s: connected and subscribed (mtu %s)", self._name, client.mtu_size)
+        await asyncio.sleep(SETTLE_AFTER_SUBSCRIBE)
 
     async def _connect_with_retries(self) -> BleakClient:
         last: GrundfosConnectionError | None = None
@@ -235,6 +249,7 @@ class BleTransport:
             loop = asyncio.get_running_loop()
             future: asyncio.Future[bytes] = loop.create_future()
             self._assembler.reset()
+            self._pieces.clear()
             self._pending = future
             frame = telegram.encode()
             try:
@@ -243,7 +258,9 @@ class BleTransport:
                     reply = await future
             except TimeoutError as err:
                 await self.disconnect()
-                raise RequestTimeout(f"{self._name}: no reply to {frame.hex(' ')}") from err
+                raise RequestTimeout(
+                    f"{self._name}: no reply to {frame.hex(' ')}; {self._received()}"
+                ) from err
             except _LINK_ERRORS as err:
                 raise self._translate(err) from err
             finally:
@@ -280,7 +297,16 @@ class BleTransport:
                 GENI_CHARACTERISTIC_UUID, frame[start : start + WRITE_CHUNK], response=False
             )
 
+    def _received(self) -> str:
+        """Describe what came for a request that got no whole reply: silence, or pieces."""
+        if not self._pieces:
+            return "nothing received"
+        quoted = " | ".join(piece.hex(" ") for piece in self._pieces[:MAX_PIECES_REPORTED])
+        more = " | ..." if len(self._pieces) > MAX_PIECES_REPORTED else ""
+        return f"{len(self._pieces)} piece(s) received: {quoted}{more}"
+
     def _on_notify(self, _characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
+        self._pieces.append(bytes(data))
         for frame in self._assembler.feed(data):
             self.last_frames.append(("rx", frame))
             self._reply_seen = True
