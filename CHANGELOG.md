@@ -17,6 +17,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `GrundfosPump(..., allow_writes=True)`. Writes stay disabled in this release; once a release
+  enables them, a pump writes only if it was created with `allow_writes=True`, so upgrading the
+  library never starts writes on its own.
 - `BleTransport` is an async context manager: `async with` connects and then disconnects.
 - `THIRD_PARTY_NOTICES.md`, shipped in the wheel and the sdist, with the copyright and MIT
   notice of alpha-hwr, from which the BlueZ pairing agent is adapted. The README said no code

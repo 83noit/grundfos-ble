@@ -115,7 +115,10 @@ for the full inventory with the provenance of every item.
 
 **Writing to a pump is not supported yet.** The write methods raise `NotSupported`, and this
 project has never sent a write to a pump. The encoders behind them are tested against frames
-captured from the Grundfos GO app, and that is all. Before writes can be enabled, at least these
+captured from the Grundfos GO app, and that is all. When a release does support writes, a pump
+will write only if it was created with `GrundfosPump(transport, allow_writes=True)`, so upgrading
+never starts writes on its own. That guard is in `GrundfosPump` only: `BleTransport.request()`
+and the GENIbus encoders send whatever they are given. Before writes can be enabled, at least these
 need fixing:
 
 - `set_flow_limiter` does not check the limit against the pump's range, so it accepts 0, negative,

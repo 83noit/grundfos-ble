@@ -38,7 +38,12 @@ ABSENT_OBJECT_STATUSES: Final = frozenset({int(ObjectStatus.OPERATION_FAILED), 0
 WRITES_ENABLED: Final = False
 """Whether this release lets :class:`GrundfosPump` write to a pump. It does not: writes are
 implemented from captured traffic and unit-tested against it, but have never been sent to a
-real pump. While this is False every write method raises :class:`NotSupported`."""
+real pump. While this is False every write method raises :class:`NotSupported`.
+
+A release that turns this on still writes only through a pump created with
+``allow_writes=True``, so upgrading never starts writes on its own. The guard covers
+:class:`GrundfosPump` only: :class:`~grundfos_ble.transport.BleTransport` sends whatever
+telegram it is given."""
 
 
 # --- Results ------------------------------------------------------------------------------------
@@ -186,9 +191,20 @@ class ProbeResult:
 class GrundfosPump:
     """Typed access to one pump over a :class:`~grundfos_ble.transport.Transport`."""
 
-    def __init__(self, transport: Transport, profile: Profile = ALPHA2_GO) -> None:
+    def __init__(
+        self, transport: Transport, profile: Profile = ALPHA2_GO, *, allow_writes: bool = False
+    ) -> None:
         self._transport = transport
         self.profile = profile
+        self._allow_writes = allow_writes
+
+    @property
+    def allow_writes(self) -> bool:
+        """Whether this pump was created with ``allow_writes=True``.
+
+        Writes also need a release that supports them (:data:`WRITES_ENABLED`).
+        """
+        return self._allow_writes
 
     @property
     def transport(self) -> Transport:
@@ -226,7 +242,7 @@ class GrundfosPump:
 
     async def set_object(self, spec: ObjectSpec, data: bytes) -> None:
         """SET one object and check the acknowledgement (disabled in this release)."""
-        _refuse_writes()
+        self._refuse_writes()
         if spec.type is None:
             raise ValueError(f"{spec.key} has no known object type; cannot write it")
         apdu = objects.set_request(spec.ref, spec.type, spec.version or 1, data)
@@ -237,7 +253,7 @@ class GrundfosPump:
 
     async def command(self, command_id: int) -> None:
         """Send a class-3 command and check it was accepted (disabled in this release)."""
-        _refuse_writes()
+        self._refuse_writes()
         reply = await self._request(classic.command(command_id))
         classic.parse_command_reply(reply.apdu, reply.raw)
 
@@ -383,6 +399,12 @@ class GrundfosPump:
 
     # -- writes (disabled in this release) ---------------------------------------------------
 
+    def _refuse_writes(self) -> None:
+        if not WRITES_ENABLED:
+            raise NotSupported("writing to a pump is not supported in this release")
+        if not self._allow_writes:
+            raise NotSupported("writes are off for this pump; create it with allow_writes=True")
+
     async def set_control_mode(self, mode: ControlMode) -> None:
         """Change the control mode (disabled in this release).
 
@@ -398,7 +420,7 @@ class GrundfosPump:
         user-setpoint object with only the setpoint replaced. The pump clamps silently, so the
         returned read-back is the truth.
         """
-        _refuse_writes()
+        self._refuse_writes()
         limits = await self.read_factory_limits(mode)
         if (
             limits.min is not None
@@ -416,7 +438,7 @@ class GrundfosPump:
         self, *, maximum: bool, enabled: bool, limit_m3h: float | None
     ) -> None:
         """Switch a flow limiter and optionally set its limit (disabled in this release)."""
-        _refuse_writes()
+        self._refuse_writes()
         spec = alpha2go.MAX_FLOW_LIMITER if maximum else alpha2go.MIN_FLOW_LIMITER
         current = await self.get_object(spec)
         await self.set_object(spec, encode_flow_limiter(current.data, enabled, limit_m3h))
@@ -439,11 +461,6 @@ class GrundfosPump:
 
 
 # --- Decoders and encoders (pure functions, unit-tested against recorded frames) ----------------
-
-
-def _refuse_writes() -> None:
-    if not WRITES_ENABLED:
-        raise NotSupported("writing to a pump is not supported in this release")
 
 
 def _f(value: float | int | bool | None) -> float | None:

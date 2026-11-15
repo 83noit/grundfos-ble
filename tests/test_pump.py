@@ -259,24 +259,39 @@ def test_encoders_match_go_app_frames() -> None:
     assert encode_flow_limiter(before, True, None)[2:6] == before[2:6]
 
 
-@pytest.mark.parametrize(
-    "write",
-    [
-        lambda p: p.set_control_mode(ControlMode.CONSTANT_FLOW),
-        lambda p: p.set_setpoint(ControlMode.CONSTANT_FLOW, 1e-4),
-        lambda p: p.set_flow_limiter(maximum=True, enabled=True, limit_m3h=1.0),
-        lambda p: p.set_autonight(True),
-        lambda p: p.start(),
-        lambda p: p.stop(),
-        lambda p: p.reset_alarm(),
-        lambda p: p.command(alpha2go.Command.START),
-        lambda p: p.set_object(alpha2go.AUTONIGHT, b"\x01"),
-    ],
-)
+WRITES = [
+    pytest.param(lambda p: p.set_control_mode(ControlMode.CONSTANT_FLOW), id="control-mode"),
+    pytest.param(lambda p: p.set_setpoint(ControlMode.CONSTANT_FLOW, 1e-4), id="setpoint"),
+    pytest.param(
+        lambda p: p.set_flow_limiter(maximum=True, enabled=True, limit_m3h=1.0), id="flow-limiter"
+    ),
+    pytest.param(lambda p: p.set_autonight(True), id="autonight"),
+    pytest.param(lambda p: p.start(), id="start"),
+    pytest.param(lambda p: p.stop(), id="stop"),
+    pytest.param(lambda p: p.reset_alarm(), id="reset-alarm"),
+    pytest.param(lambda p: p.command(alpha2go.Command.START), id="command"),
+    pytest.param(lambda p: p.set_object(alpha2go.AUTONIGHT, b"\x01"), id="set-object"),
+]
+
+
+@pytest.mark.parametrize("write", WRITES)
 async def test_writes_are_refused_before_anything_is_sent(write) -> None:
     transport = ReplayTransport([])
     with pytest.raises(NotSupported, match="not supported in this release"):
-        await write(GrundfosPump(transport))
+        await write(GrundfosPump(transport, allow_writes=True))
+    assert transport.sent == []
+
+
+@pytest.mark.parametrize("write", WRITES)
+async def test_a_release_with_writes_still_needs_allow_writes(
+    write, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("grundfos_ble.pump.WRITES_ENABLED", True)
+    transport = ReplayTransport([])
+    pump = GrundfosPump(transport)
+    assert not pump.allow_writes
+    with pytest.raises(NotSupported, match="allow_writes=True"):
+        await write(pump)
     assert transport.sent == []
 
 
@@ -303,7 +318,7 @@ async def test_write_path_sends_go_app_frames(monkeypatch: pytest.MonkeyPatch) -
             ),
         ]
     )
-    pump = GrundfosPump(transport)
+    pump = GrundfosPump(transport, allow_writes=True)
     await pump.set_control_mode(ControlMode.CP_AUTOADAPT)
     await pump.start()
     await pump.stop()
