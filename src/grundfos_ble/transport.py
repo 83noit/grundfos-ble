@@ -24,7 +24,7 @@ import logging
 import re
 from collections import deque
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Final, Protocol
+from typing import TYPE_CHECKING, Final, Protocol, Self
 
 from bleak import BleakClient
 from bleak.exc import BleakCharacteristicNotFoundError, BleakError
@@ -42,6 +42,8 @@ from grundfos_ble.exceptions import (
 from grundfos_ble.genibus.telegram import SD_ERROR, FrameAssembler, Telegram
 
 if TYPE_CHECKING:
+    from types import TracebackType
+
     from bleak.backends.characteristic import BleakGATTCharacteristic
     from bleak.backends.device import BLEDevice
 
@@ -126,6 +128,8 @@ class BleTransport:
     attempt, so a retry goes through whichever adapter or proxy now hears the pump best, as
     bleak-retry-connector's ``ble_device_callback`` does. It may return None to keep the last
     device.
+
+    ``async with BleTransport(device) as transport:`` connects on entry and disconnects on exit.
     """
 
     def __init__(
@@ -154,6 +158,20 @@ class BleTransport:
         self._reply_seen = False
         self.last_frames: deque[tuple[str, bytes]] = deque(maxlen=32)
         """Recent traffic as ("tx" | "rx", frame) for diagnostics and fixture capture."""
+
+    async def __aenter__(self) -> Self:
+        """Connect, as :meth:`connect` does, and return the transport."""
+        await self.connect()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """Disconnect, whatever happened in the block."""
+        await self.disconnect()
 
     @property
     def device(self) -> BLEDevice:

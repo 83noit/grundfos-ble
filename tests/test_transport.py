@@ -129,6 +129,20 @@ async def test_timeout(fake_establish: FakeClient) -> None:
         await transport.request(Telegram.request(get_request(ObjectRef(93, 290))))
 
 
+async def test_async_with_connects_and_disconnects(fake_establish: FakeClient) -> None:
+    async with BleTransport(_device()) as transport:
+        assert transport.is_connected
+    assert not transport.is_connected
+
+
+async def test_async_with_disconnects_when_the_block_fails(fake_establish: FakeClient) -> None:
+    transport = BleTransport(_device())
+    with pytest.raises(RuntimeError):
+        async with transport:
+            raise RuntimeError
+    assert not transport.is_connected
+
+
 async def test_an_explicit_zero_timeout_is_not_the_default(fake_establish: FakeClient) -> None:
     fake_establish.auto_reply = False
     transport = BleTransport(_device(), request_timeout=60)

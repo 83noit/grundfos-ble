@@ -17,6 +17,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `BleTransport` is an async context manager: `async with` connects and then disconnects.
 - `THIRD_PARTY_NOTICES.md`, shipped in the wheel and the sdist, with the copyright and MIT
   notice of alpha-hwr, from which the BlueZ pairing agent is adapted. The README said no code
   from the acknowledged projects was used; that has not been true since 0.1.1.

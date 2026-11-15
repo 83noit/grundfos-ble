@@ -84,6 +84,9 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+`BleTransport` is also an async context manager: `async with BleTransport(device) as transport:`
+connects on entry and disconnects on exit.
+
 The library never scans; you hand it a `BLEDevice`. Under Home Assistant that device comes
 from the Bluetooth integration and HA chooses the proxy.
 
