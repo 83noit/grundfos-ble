@@ -19,6 +19,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Python 3.15 support, tested in CI.
 - `GrundfosPump(..., allow_writes=True)`. Writes stay disabled in this release; once a release
   enables them, a pump writes only if it was created with `allow_writes=True`, so upgrading the
   library never starts writes on its own.
