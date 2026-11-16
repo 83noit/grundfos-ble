@@ -8,7 +8,7 @@ version = "0.2.0"
 description = "Async Python library for Grundfos circulator pumps over GENIbus-on-Bluetooth LE (ALPHA2 GO first, read-only)"
 readme = "README.md"
 license = "MIT"
-license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+license-files = ["LICENSE"]
 requires-python = ">=3.13"
 authors = [{ name = "83noit" }]
 keywords = ["grundfos", "alpha2", "genibus", "bluetooth", "ble", "pump", "home-assistant"]
@@ -25,9 +25,10 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
+    # The Bluetooth link (pairing, proxies, BlueZ agent, one request at a time); every 1.x is
+    # backward compatible.
+    "ble-bond>=1.0,<2",
     "bleak>=3.0.2",
-    "bleak-retry-connector>=4.7.1",
-    "dbus-fast>=4.0; sys_platform == 'linux'",
 ]
 
 [project.urls]
@@ -44,20 +45,20 @@ dev = [
     "pytest-cov>=7",
     "ruff>=0.14",
     "mypy>=1.19",
-    # bluez.py imports dbus-fast on Linux only; mypy and the BlueZ tests need it everywhere.
-    "dbus-fast>=4.0",
 ]
 
 [tool.uv]
 # Resolve only releases at least a week old, so a compromised upload has time to be yanked.
+# ble-bond is ours and released alongside this library, so it is exempt.
 exclude-newer = "7 days"
+exclude-newer-package = { ble-bond = false }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/grundfos_ble"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "/src", "/tests", "/docs", "/README.md", "/CHANGELOG.md", "/LICENSE", "/THIRD_PARTY_NOTICES.md",
+    "/src", "/tests", "/docs", "/README.md", "/CHANGELOG.md", "/LICENSE",
 ]
 
 [tool.ruff]

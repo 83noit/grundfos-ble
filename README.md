@@ -171,10 +171,9 @@ captured traffic or documentation for related pumps. Other pump families are unv
 ## Acknowledgements
 
 This library was written from the GENIbus specification and from frames captured on real pumps.
-The BlueZ pairing agent (`bluez.py`) is adapted from alpha-hwr; its MIT notice is in
-[THIRD_PARTY_NOTICES.md](https://github.com/83noit/grundfos-ble/blob/main/THIRD_PARTY_NOTICES.md)
-and ships in the wheel. No other code from these projects is used, but their published protocol
-research made the work possible:
+The Bluetooth link, including the BlueZ pairing agent adapted from alpha-hwr, lives in
+[ble-bond](https://github.com/83noit/ble-bond), which ships alpha-hwr's MIT notice. No code from
+these projects is used here, but their published protocol research made the work possible:
 
 - [esphome-alpha2go](https://github.com/Birkemosen/esphome-alpha2go) (GPL-3.0): ALPHA2 GO traffic captures and object layouts
 - [alpha-hwr](https://eman.github.io/alpha-hwr/) (MIT): ALPHA HWR protocol documentation

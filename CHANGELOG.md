@@ -7,6 +7,14 @@ change defaults; a patch release only fixes bugs.
 
 ## [Unreleased]
 
+### Changed
+
+- The Bluetooth link now comes from [ble-bond](https://github.com/83noit/ble-bond) 1.x, which
+  grundfos-ble and mira-ble share: pairing, recording which proxy each attempt used, the BlueZ
+  pairing agent, and one request at a time. `BleTransport`, its exceptions and
+  `grundfos_ble.bluez` keep their names and behaviour; the pump's link settings are
+  `grundfos_ble.transport.POLICY`. alpha-hwr's notice moves to ble-bond with the agent.
+
 ## [0.2.0] - 2026-11-16
 
 ### Added

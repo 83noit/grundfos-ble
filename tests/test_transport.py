@@ -1,20 +1,26 @@
-"""BleTransport against a fake bleak client."""
+"""BleTransport: GENIbus on top of ble-bond, against ble-bond's fake client.
+
+The link itself (pairing, retries, recording the path, closing on an unfinished request, the
+BlueZ agent) is tested in ble-bond. These tests cover what this library adds: the pump's link
+policy, GENIbus reply matching, and turning ble-bond's exceptions into this library's.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import patch
 
 import pytest
+from ble_bond import link as link_module
+from ble_bond.testing import FakeClient, patched_establish
 from bleak import BleakError
 from bleak.backends.device import BLEDevice
-from bleak.exc import BleakCharacteristicNotFoundError
-from bleak_retry_connector import BleakClientWithServiceCache
 
 from grundfos_ble import transport as transport_module
+from grundfos_ble.bluez import remove_bluez_bond
 from grundfos_ble.exceptions import (
     ConnectionLost,
     GrundfosConnectionError,
@@ -27,769 +33,194 @@ from grundfos_ble.genibus.apdu import Apdu
 from grundfos_ble.genibus.objects import ObjectRef, get_request
 from grundfos_ble.genibus.telegram import SD_ERROR, Telegram
 from grundfos_ble.testing import Exchange
-from grundfos_ble.transport import BleTransport
+from grundfos_ble.transport import POLICY, BleTransport
 
 from .conftest import GO_SET_CP_SETPOINT_2_5M, REQ_PROCESS_VALUES
 
-
-class FakeClient:
-    """Enough of BleakClient for the transport: notifications, writes, disconnects."""
-
-    def __init__(self, replies: dict[bytes, bytes] | None = None) -> None:
-        self.replies = replies or {}
-        self.writes: list[bytes] = []
-        self.is_connected = True
-        self.notify_cb: Callable[[Any, bytearray], None] | None = None
-        self.disconnected_callback: Callable[[Any], None] | None = None
-        self.auto_reply = True
-        self.unsubscribed = False
-
-    async def stop_notify(self, _char: str) -> None:
-        self.unsubscribed = True
-
-    async def start_notify(self, _char: str, callback: Callable[[Any, bytearray], None]) -> None:
-        self.notify_cb = callback
-
-    async def write_gatt_char(self, _char: str, data: bytes, response: bool | None = None) -> None:
-        assert response is False
-        assert len(data) <= 20
-        self.writes.append(bytes(data))
-        if not self.auto_reply:
-            return
-        frame = b"".join(self.writes)
-        if frame in self.replies and self.notify_cb is not None:
-            reply = self.replies[frame]
-            self.writes.clear()
-            for start in range(0, len(reply), 20):
-                self.notify_cb(None, bytearray(reply[start : start + 20]))
-
-    async def disconnect(self) -> None:
-        self.is_connected = False
-
-    def drop(self) -> None:
-        self.is_connected = False
-        assert self.disconnected_callback is not None
-        self.disconnected_callback(self)
+PROCESS_VALUES = Telegram.request(get_request(ObjectRef(93, 290)))
 
 
-def _device() -> BLEDevice:
-    return BLEDevice("AA:BB:CC:DD:EE:FF", "Test pump", {"source": "00:11:22:33:44:55"})
-
-
-@contextlib.asynccontextmanager
-async def _no_agent(_device: BLEDevice, **_kwargs: Any) -> AsyncIterator[None]:
-    yield
+def _device(details: dict[str, Any] | None = None) -> BLEDevice:
+    return BLEDevice("AA:BB:CC:DD:EE:FF", "Test pump", details or {"source": "00:11:22:33:44:55"})
 
 
 @pytest.fixture(autouse=True)
-def no_settle():
-    with (
-        patch.object(transport_module, "SETTLE_AFTER_SUBSCRIBE", 0),
-        patch.object(transport_module, "SUBSCRIBE_RETRY_DELAY", 0),
-    ):
+def no_pauses() -> Any:
+    quick = transport_module.POLICY.__class__(
+        settle_after_subscribe=0, subscribe_retry_delay=0, write_chunk=20
+    )
+    with patch.object(transport_module, "POLICY", quick):
         yield
 
 
 @pytest.fixture
-def fake_establish():
-    client = FakeClient()
-
-    async def establish(_cls: Any, _device: BLEDevice, _name: str, **kwargs: Any) -> FakeClient:
-        assert kwargs["pair"] is True
-        client.disconnected_callback = kwargs["disconnected_callback"]
-        return client
-
-    with patch.object(transport_module, "establish_connection", establish):
+def client(measured_2026_11_09: list[Exchange]) -> Any:
+    client = FakeClient({e.request: e.reply for e in measured_2026_11_09})
+    with patched_establish(client) as calls:
+        client.calls = calls
         yield client
 
 
-async def test_request_roundtrip(
-    fake_establish: FakeClient, measured_2026_11_09: list[Exchange]
-) -> None:
-    fake_establish.replies = {e.request: e.reply for e in measured_2026_11_09}
-    transport = BleTransport(_device(), name="test")
-    assert not transport.is_connected
-    await transport.connect()
-    await transport.connect()  # idempotent
-    assert transport.is_connected
-    reply = await transport.request(Telegram.request(get_request(ObjectRef(93, 290))))
-    assert reply.raw == measured_2026_11_09[0].reply
-    assert transport.last_frames[0] == ("tx", REQ_PROCESS_VALUES)
-    assert transport.last_frames[-1][0] == "rx"
-    await transport.disconnect()
-    assert not transport.is_connected
-    await transport.disconnect()  # idempotent
-
-
-async def test_long_frames_are_chunked(fake_establish: FakeClient) -> None:
-    fake_establish.auto_reply = False
-    transport = BleTransport(_device())
-    await transport.connect()
-    await transport.send(Telegram.decode(GO_SET_CP_SETPOINT_2_5M))
-    assert fake_establish.writes == [GO_SET_CP_SETPOINT_2_5M[:20], GO_SET_CP_SETPOINT_2_5M[20:]]
-
-
-async def test_timeout(fake_establish: FakeClient) -> None:
-    fake_establish.auto_reply = False
-    transport = BleTransport(_device(), request_timeout=0.01)
-    await transport.connect()
-    with pytest.raises(RequestTimeout, match=r"no reply to .*; nothing received$"):
-        await transport.request(Telegram.request(get_request(ObjectRef(93, 290))))
-
-
-async def test_async_with_connects_and_disconnects(fake_establish: FakeClient) -> None:
-    async with BleTransport(_device()) as transport:
-        assert transport.is_connected
-    assert not transport.is_connected
-
-
-async def test_async_with_disconnects_when_the_block_fails(fake_establish: FakeClient) -> None:
-    transport = BleTransport(_device())
-    with pytest.raises(RuntimeError):
-        async with transport:
-            raise RuntimeError
-    assert not transport.is_connected
-
-
-async def test_an_explicit_zero_timeout_is_not_the_default(fake_establish: FakeClient) -> None:
-    fake_establish.auto_reply = False
-    transport = BleTransport(_device(), request_timeout=60)
-    await transport.connect()
-    with pytest.raises(RequestTimeout):
-        await transport.request(Telegram.request(get_request(ObjectRef(93, 290))), timeout=0)
-
-
-async def test_timeout_quotes_the_pieces_of_an_unfinished_reply(
-    fake_establish: FakeClient, measured_2026_11_09: list[Exchange]
-) -> None:
-    """Lost notifications and a silent pump look alike unless the pieces are kept."""
-    reply = measured_2026_11_09[0].reply
-    fake_establish.auto_reply = False
-    transport = BleTransport(_device(), request_timeout=0.01)
-    await transport.connect()
-    assert fake_establish.notify_cb is not None
-    fake_establish.notify_cb(None, bytearray(reply[:20]))  # left over: not quoted
-    request = transport.request(Telegram.request(get_request(ObjectRef(93, 290))))
-    task = asyncio.ensure_future(request)
-    await asyncio.sleep(0)
-    fake_establish.notify_cb(None, bytearray(reply[:20]))
-    fake_establish.notify_cb(None, bytearray(reply[40:]))
-    with pytest.raises(RequestTimeout) as caught:
-        await task
-    assert str(caught.value).endswith(
-        f"; 2 piece(s) received: {reply[:20].hex(' ')} | {reply[40:].hex(' ')}"
-    )
-
-
-async def test_timeout_quotes_a_bounded_number_of_pieces(fake_establish: FakeClient) -> None:
-    fake_establish.auto_reply = False
-    transport = BleTransport(_device(), request_timeout=0.01)
-    await transport.connect()
-    task = asyncio.ensure_future(
-        transport.request(Telegram.request(get_request(ObjectRef(93, 290))))
-    )
-    await asyncio.sleep(0)
-    assert fake_establish.notify_cb is not None
-    for _ in range(transport_module.MAX_PIECES_REPORTED + 1):
-        fake_establish.notify_cb(None, bytearray(b"\x00"))
-    with pytest.raises(RequestTimeout, match=r"9 piece\(s\) received: (00 \| ){8}\.\.\.$"):
-        await task
-
-
-@pytest.mark.parametrize(
-    "details",
-    [{"source": "00:11:22:33:44:55"}, {"path": "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF"}],
-    ids=["proxy", "local-bluez"],
-)
-async def test_every_link_settles_after_subscribing(
-    fake_establish: FakeClient, details: dict[str, Any]
-) -> None:
-    """ESPHome measured lost first requests within 200 ms of subscribing (esphome#22651)."""
-    events: list[str] = []
-
-    async def sleep(delay: float) -> None:
-        events.append(f"sleep {delay}")
-
-    async def start_notify(_char: str, callback: Callable[[Any, bytearray], None]) -> None:
-        events.append("subscribe")
-        fake_establish.notify_cb = callback
-
-    fake_establish.start_notify = start_notify  # type: ignore[method-assign]
-    with (
-        patch.object(transport_module, "SETTLE_AFTER_SUBSCRIBE", 0.5),
-        patch.object(transport_module.asyncio, "sleep", sleep),
-        patch.object(transport_module, "bluez_pairing_agent", _no_agent),
-    ):
-        await BleTransport(BLEDevice("AA:BB:CC:DD:EE:FF", "Test pump", details)).connect()
-    assert events == ["subscribe", "sleep 0.5"]
-
-
-async def test_not_connected() -> None:
-    transport = BleTransport(_device())
-    with pytest.raises(ConnectionLost):
-        await transport.request(Telegram.request(get_request(ObjectRef(93, 290))))
-
-
-async def test_early_drop_is_connection_lost_not_pairing(fake_establish: FakeClient) -> None:
-    fake_establish.auto_reply = False
-    dropped = []
-    transport = BleTransport(_device(), disconnected_callback=lambda: dropped.append(True))
-    await transport.connect()
-    task = asyncio.create_task(transport.request(Telegram.request(get_request(ObjectRef(93, 290)))))
-    await asyncio.sleep(0)
-    fake_establish.drop()
-    with pytest.raises(ConnectionLost):
-        await task
-    assert dropped == [True]
-    assert not transport.is_connected
-    assert not transport.reply_seen
-
-
-async def test_late_drop_is_connection_lost(
-    fake_establish: FakeClient, measured_2026_11_09
-) -> None:
-    fake_establish.replies = {e.request: e.reply for e in measured_2026_11_09}
-    transport = BleTransport(_device())
-    await transport.connect()
-    await transport.request(Telegram.request(get_request(ObjectRef(93, 290))))  # a reply was seen
-    fake_establish.auto_reply = False
-    task = asyncio.create_task(transport.request(Telegram.request(get_request(ObjectRef(87, 69)))))
-    await asyncio.sleep(0)
-    fake_establish.drop()
-    with pytest.raises(ConnectionLost):
-        await task
-
-
-async def test_pairing_error_code_is_extracted() -> None:
-    async def establish(*_args: Any, **_kwargs: Any) -> FakeClient:
-        raise BleakError("Pairing failed due to error: 82")
-
-    with (
-        patch.object(transport_module, "establish_connection", establish),
-        pytest.raises(PairingRequired) as excinfo,
-    ):
-        await BleTransport(_device()).connect()
-    assert excinfo.value.error_code == 82
-
-
-async def test_other_connect_errors() -> None:
-    async def establish(*_args: Any, **_kwargs: Any) -> FakeClient:
-        raise BleakError("No backend with an available connection slot")
-
-    with (
-        patch.object(transport_module, "establish_connection", establish),
-        pytest.raises(GrundfosConnectionError, match="connection slot"),
-    ):
-        await BleTransport(_device()).connect()
-
-    async def establish_timeout(*_args: Any, **_kwargs: Any) -> FakeClient:
-        raise TimeoutError
-
-    with (
-        patch.object(transport_module, "establish_connection", establish_timeout),
-        pytest.raises(GrundfosConnectionError, match="timed out"),
-    ):
-        await BleTransport(_device()).connect()
-
-
-async def test_notify_failure_disconnects(fake_establish: FakeClient) -> None:
-    async def failing_notify(*_args: Any) -> None:
-        raise BleakError("GATT error")
-
-    fake_establish.start_notify = failing_notify  # type: ignore[method-assign]
-    transport = BleTransport(_device())
-    with pytest.raises(GrundfosConnectionError, match="GATT"):
-        await transport.connect()
-    assert not transport.is_connected
-
-
-async def test_write_error_is_translated(fake_establish: FakeClient) -> None:
-    async def failing_write(*_args: Any, **_kwargs: Any) -> None:
-        raise BleakError("write failed")
-
-    fake_establish.write_gatt_char = failing_write  # type: ignore[method-assign]
-    transport = BleTransport(_device())
-    await transport.connect()
-    with pytest.raises(GrundfosConnectionError, match="write failed") as caught:
-        await transport.request(Telegram.request(get_request(ObjectRef(93, 290))))
-    assert not isinstance(caught.value, PairingRequired)
-    assert not transport.is_connected  # a half-written request must not leave the link up
-    fake_establish.is_connected = True
-    await transport.connect()
-    with pytest.raises(GrundfosConnectionError, match="write failed"):
-        await transport.send(Telegram.request(get_request(ObjectRef(93, 290))))
-    assert not transport.is_connected
-
-
-async def test_unsolicited_frame_is_ignored(
-    fake_establish: FakeClient, measured_2026_11_09
-) -> None:
-    transport = BleTransport(_device())
-    await transport.connect()
-    assert fake_establish.notify_cb is not None
-    fake_establish.notify_cb(None, bytearray(measured_2026_11_09[0].reply))
-    assert transport.last_frames[-1] == ("rx", measured_2026_11_09[0].reply)
-    assert transport.device.address == "AA:BB:CC:DD:EE:FF"
-
-
-def _establish_sequence(*outcomes: Any):
-    remaining = list(outcomes)
-    calls: list[dict[str, Any]] = []
-
-    async def establish(_cls: Any, _device: BLEDevice, _name: str, **kwargs: Any) -> Any:
-        calls.append(kwargs)
-        outcome = remaining.pop(0)
-        if isinstance(outcome, BaseException):
-            raise outcome
-        return outcome
-
-    return establish, calls
-
-
-@pytest.mark.parametrize("code", [99, 102, 96, 92, -1])
-async def test_transient_smp_reasons_are_not_pairing_required(code: int) -> None:
-    establish, _ = _establish_sequence(BleakError(f"Pairing failed due to error: {code}"))
-    with (
-        patch.object(transport_module, "establish_connection", establish),
-        pytest.raises(GrundfosConnectionError) as excinfo,
-    ):
-        await BleTransport(_device(), max_attempts=1).connect()
-    assert not isinstance(excinfo.value, PairingRequired)
-    assert excinfo.value.error_code == code
-
-
-async def test_refusal_on_the_first_attempt_is_not_lost_to_a_retry() -> None:
-    establish, calls = _establish_sequence(
-        BleakError("Pairing failed due to error: 82"), BleakError("Disconnected during connect")
-    )
-    with (
-        patch.object(transport_module, "establish_connection", establish),
-        pytest.raises(PairingRequired),
-    ):
-        await BleTransport(_device(), max_attempts=2).connect()
-    assert len(calls) == 1
-    assert calls[0]["max_attempts"] == 1
-
-
-async def test_retry_after_an_ordinary_failure() -> None:
-    client = FakeClient()
-    establish, calls = _establish_sequence(BleakError("no slot"), client)
-    with (
-        patch.object(transport_module, "establish_connection", establish),
-        patch.object(transport_module, "RETRY_DELAY", 0),
-    ):
-        transport = BleTransport(_device(), max_attempts=2)
-        await transport.connect()
-    assert transport.is_connected
-    assert len(calls) == 2
-
-
-async def test_connect_timeout_is_enforced() -> None:
-    async def establish(*_args: Any, **_kwargs: Any) -> FakeClient:
-        await asyncio.sleep(30)
-        raise AssertionError
-
-    with (
-        patch.object(transport_module, "establish_connection", establish),
-        pytest.raises(GrundfosConnectionError, match="timed out"),
-    ):
-        await BleTransport(_device(), max_attempts=1, connect_timeout=0.01).connect()
-
-
-@pytest.mark.parametrize("error", [EOFError("x"), BrokenPipeError("x"), NotImplementedError("x")])
-async def test_foreign_link_errors_are_translated(error: Exception) -> None:
-    establish, _ = _establish_sequence(error)
-    with (
-        patch.object(transport_module, "establish_connection", establish),
-        pytest.raises(GrundfosConnectionError),
-    ):
-        await BleTransport(_device(), max_attempts=1).connect()
-
-
-async def test_timeout_closes_the_link_so_a_late_reply_cannot_answer_the_next_request(
-    fake_establish: FakeClient,
-) -> None:
-    fake_establish.auto_reply = False
-    transport = BleTransport(_device(), request_timeout=0.01)
-    await transport.connect()
-    with pytest.raises(RequestTimeout):
-        await transport.request(Telegram.request(get_request(ObjectRef(93, 290))))
-    assert not transport.is_connected
-    with pytest.raises(ConnectionLost):
-        await transport.request(Telegram.request(get_request(ObjectRef(87, 69))))
-
-
-async def test_timeout_covers_a_stalled_write(fake_establish: FakeClient) -> None:
-    async def stalled(*_args: Any, **_kwargs: Any) -> None:
-        await asyncio.sleep(30)
-
-    fake_establish.write_gatt_char = stalled  # type: ignore[method-assign]
-    transport = BleTransport(_device(), request_timeout=0.01)
-    await transport.connect()
-    with pytest.raises(RequestTimeout):
-        await transport.request(Telegram.request(get_request(ObjectRef(93, 290))))
-
-
-async def test_failed_subscribe_with_timeout_closes_the_link(fake_establish: FakeClient) -> None:
-    async def failing_notify(*_args: Any) -> None:
-        raise TimeoutError
-
-    fake_establish.start_notify = failing_notify  # type: ignore[method-assign]
-    transport = BleTransport(_device())
-    with pytest.raises(GrundfosConnectionError):
-        await transport.connect()
-    assert not transport.is_connected
-
-
-async def test_late_callback_from_an_old_link_is_ignored(fake_establish: FakeClient) -> None:
-    transport = BleTransport(_device())
-    await transport.connect()
-    transport._on_disconnect(FakeClient())  # type: ignore[arg-type]
-    assert transport.is_connected
-
-
-async def test_error_reply_is_a_protocol_error(fake_establish: FakeClient) -> None:
-    request = Telegram.request(get_request(ObjectRef(93, 290)))
-    payload = Telegram(SD_ERROR, 0xF8, 0xE7, (Apdu(10, 0, b"\x00"),)).encode()
-    fake_establish.replies = {request.encode(): payload}
-    transport = BleTransport(_device())
-    await transport.connect()
-    with pytest.raises(ProtocolError, match="error reply"):
-        await transport.request(request)
-
-
-def test_a_reply_outlasts_the_link_supervision_timeout() -> None:
-    """A stalled link that recovers within 8 s must still answer (ha-grundfos-ble#3)."""
-    assert transport_module.DEFAULT_REQUEST_TIMEOUT > 8.0
-
-
-async def test_each_attempt_asks_for_the_current_device() -> None:
-    first = _device()
-    second = BLEDevice("AA:BB:CC:DD:EE:FF", "Test pump", {"source": "66:77:88:99:AA:BB"})
-    devices = iter([first, None, second])
-    seen: list[BLEDevice] = []
-
-    async def establish(_cls: Any, device: BLEDevice, _name: str, **_kwargs: Any) -> FakeClient:
-        seen.append(device)
-        if len(seen) < 3:
-            raise BleakError("no slot")
-        return FakeClient()
-
-    with (
-        patch.object(transport_module, "establish_connection", establish),
-        patch.object(transport_module, "RETRY_DELAY", 0),
-    ):
-        transport = BleTransport(first, max_attempts=3, device_callback=lambda: next(devices))
-        await transport.connect()
-    assert seen == [first, first, second]  # None keeps the last device
-    assert transport.device is second
-
-
-@pytest.mark.parametrize(
-    ("details", "cached"),
-    [
-        ({"source": "00:11:22:33:44:55"}, True),
-        ({"path": "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF", "props": {}}, False),
-    ],
-    ids=["proxy", "local-bluez"],
-)
-async def test_a_local_adapter_waits_for_resolved_services(
-    details: dict[str, Any], cached: bool
-) -> None:
-    seen: list[bool] = []
-
-    async def establish(_cls: Any, _device: BLEDevice, _name: str, **kwargs: Any) -> FakeClient:
-        seen.append(kwargs["use_services_cache"])
-        return FakeClient()
-
-    device = BLEDevice("AA:BB:CC:DD:EE:FF", "Test pump", details)
-    with (
-        patch.object(transport_module, "establish_connection", establish),
-        patch.object(transport_module, "bluez_pairing_agent", _no_agent),
-    ):
-        await BleTransport(device).connect()
-    assert seen == [cached]
-
-
-async def test_a_missing_characteristic_clears_the_service_cache() -> None:
-    class CachedClient(BleakClientWithServiceCache):
-        def __init__(self) -> None:
-            self.cleared = False
-            self.connected = True
-
-        @property
-        def is_connected(self) -> bool:
-            return self.connected
-
-        async def start_notify(self, *_args: Any, **_kwargs: Any) -> None:
-            raise BleakCharacteristicNotFoundError("geni")
-
-        async def clear_cache(self) -> bool:
-            self.cleared = True
-            return True
-
-        async def disconnect(self) -> None:
-            self.connected = False
-
-    client = CachedClient()
-    establish, _ = _establish_sequence(client)
-    with (
-        patch.object(transport_module, "establish_connection", establish),
-        pytest.raises(GrundfosConnectionError, match="not found"),
-    ):
-        await BleTransport(_device(), max_attempts=1).connect()
-    assert client.cleared
-    assert not client.connected
-
-
-# --- Reply matching and closing the link (fix plan A1-A5) -----------------------------------------
-
-
-async def _pending_request(
-    transport: BleTransport, telegram: Telegram, **kwargs: Any
-) -> asyncio.Task[Telegram]:
+async def _pending(transport: BleTransport, telegram: Telegram, **kwargs: Any) -> asyncio.Task[Any]:
     task = asyncio.create_task(transport.request(telegram, **kwargs))
-    await asyncio.sleep(0)
+    for _ in range(3):
+        await asyncio.sleep(0)
     return task
 
 
-async def test_a_cancelled_request_closes_the_link(fake_establish: FakeClient) -> None:
-    fake_establish.auto_reply = False
+def test_the_pumps_link_policy() -> None:
+    """Each value of the ALPHA2 GO's policy, with where it comes from in transport.py."""
+    assert POLICY.settle_after_pair == 0.0
+    assert POLICY.settle_after_subscribe == 0.5  # esphome#22651
+    assert POLICY.write_chunk == 20
+    assert not POLICY.retry_unpaired  # the pump never answers an unencrypted link
+    assert not POLICY.insufficient_authentication_is_evidence
+    assert POLICY.request_timeout > 8.0  # above the link supervision timeout (#3)
+
+
+async def test_request_roundtrip(client: FakeClient, measured_2026_11_09: list[Exchange]) -> None:
+    async with BleTransport(_device(), name="test") as transport:
+        assert transport.is_connected
+        reply = await transport.request(PROCESS_VALUES)
+        assert reply.raw == measured_2026_11_09[0].reply
+        assert transport.reply_seen
+        assert transport.last_frames[0] == ("tx", REQ_PROCESS_VALUES)
+        assert transport.last_source == "00:11:22:33:44:55"
+        assert transport.device.address == "AA:BB:CC:DD:EE:FF"
+    assert not transport.is_connected
+    assert client.calls[0]["pair"] is True
+
+
+async def test_long_frames_go_in_20_byte_pieces(client: FakeClient) -> None:
+    client.auto_reply = False
     transport = BleTransport(_device())
     await transport.connect()
-    task = await _pending_request(transport, Telegram.request(get_request(ObjectRef(93, 290))))
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert not transport.is_connected
-    assert fake_establish.unsubscribed
+    await transport.send(Telegram.decode(GO_SET_CP_SETPOINT_2_5M))
+    assert client.writes == [GO_SET_CP_SETPOINT_2_5M[:20], GO_SET_CP_SETPOINT_2_5M[20:]]
 
 
-async def test_a_reply_of_the_wrong_class_is_not_taken(
-    fake_establish: FakeClient, measured_2026_11_09: list[Exchange]
+async def test_a_reply_of_another_class_is_not_taken(
+    client: FakeClient, measured_2026_11_09: list[Exchange]
 ) -> None:
-    """A stray frame is logged as unsolicited and the wait goes on for the real reply."""
-    fake_establish.auto_reply = False
+    client.auto_reply = False
     transport = BleTransport(_device(), request_timeout=1)
     await transport.connect()
-    assert fake_establish.notify_cb is not None
-    stray = Telegram(0x24, 0xF8, 0xE7, (Apdu(7, 0, b"ALPHA\x00"),)).encode()
-    task = await _pending_request(transport, Telegram.request(get_request(ObjectRef(93, 290))))
-    fake_establish.notify_cb(None, bytearray(stray))
+    task = await _pending(transport, PROCESS_VALUES)
+    client.notify(Telegram(0x24, 0xF8, 0xE7, (Apdu(7, 0, b"ALPHA\x00"),)).encode())
     assert not task.done()
-    fake_establish.notify_cb(None, bytearray(measured_2026_11_09[0].reply))
-    reply = await task
-    assert reply.raw == measured_2026_11_09[0].reply
+    client.notify(measured_2026_11_09[0].reply)
+    assert (await task).raw == measured_2026_11_09[0].reply
 
 
 async def test_expect_rejects_a_frame_of_the_right_class(
-    fake_establish: FakeClient, measured_2026_11_09: list[Exchange]
+    client: FakeClient, measured_2026_11_09: list[Exchange]
 ) -> None:
-    fake_establish.auto_reply = False
+    client.auto_reply = False
     transport = BleTransport(_device(), request_timeout=0.05)
     await transport.connect()
-    assert fake_establish.notify_cb is not None
-    task = await _pending_request(
-        transport,
-        Telegram.request(get_request(ObjectRef(93, 290))),
-        expect=lambda reply: reply.apdu.data[1:3] == b"\x02\x35",
+    task = await _pending(
+        transport, PROCESS_VALUES, expect=lambda reply: reply.apdu.data[1:3] == b"\x02\x35"
     )
-    fake_establish.notify_cb(None, bytearray(measured_2026_11_09[1].reply))  # motor state
+    client.notify(measured_2026_11_09[1].reply)  # motor state
     with pytest.raises(RequestTimeout, match=r"1 frame\(s\) did not answer the request$"):
         await task
     assert not transport.is_connected
 
 
-async def test_a_reply_from_another_address_is_not_taken(fake_establish: FakeClient) -> None:
-    fake_establish.auto_reply = False
-    transport = BleTransport(_device(), request_timeout=0.05)
+async def test_a_long_false_start_does_not_swallow_the_reply(
+    client: FakeClient, measured_2026_11_09: list[Exchange]
+) -> None:
+    client.auto_reply = False
+    transport = BleTransport(_device(), request_timeout=1)
     await transport.connect()
-    assert fake_establish.notify_cb is not None
-    # Starts like a reply but names another source: the assembler drops it byte by byte.
-    other = Telegram(0x24, 0xF8, 0xE6, (Apdu(10, 0, b"\x00"),)).encode()
-    task = await _pending_request(transport, Telegram.request(get_request(ObjectRef(93, 290))))
-    fake_establish.notify_cb(None, bytearray(other))
-    with pytest.raises(RequestTimeout):
+    task = await _pending(transport, PROCESS_VALUES)
+    client.notify(bytes.fromhex("24 40 f8 e7 0a"))
+    client.notify(measured_2026_11_09[0].reply)
+    assert (await task).raw == measured_2026_11_09[0].reply
+
+
+async def test_an_error_reply_is_a_protocol_error(client: FakeClient) -> None:
+    error = Telegram(SD_ERROR, 0xF8, 0xE7, (Apdu(10, 0, b"\x00"),)).encode()
+    client.replies = {PROCESS_VALUES.encode(): error}
+    transport = BleTransport(_device())
+    await transport.connect()
+    with pytest.raises(ProtocolError, match="error reply"):
+        await transport.request(PROCESS_VALUES)
+
+
+async def test_a_timeout_is_this_librarys_and_closes_the_link(client: FakeClient) -> None:
+    client.auto_reply = False
+    transport = BleTransport(_device(), request_timeout=0.01)
+    await transport.connect()
+    with pytest.raises(RequestTimeout, match="nothing received") as caught:
+        await transport.request(PROCESS_VALUES)
+    assert isinstance(caught.value, GrundfosConnectionError)
+    assert not transport.is_connected
+    with pytest.raises(ConnectionLost):
+        await transport.request(PROCESS_VALUES)
+
+
+async def test_a_lost_link_is_connection_lost(client: FakeClient) -> None:
+    client.auto_reply = False
+    transport = BleTransport(_device())
+    await transport.connect()
+    task = await _pending(transport, PROCESS_VALUES)
+    client.drop()
+    with pytest.raises(ConnectionLost):
         await task
 
 
-async def test_concurrent_connects_share_one_connection() -> None:
-    calls = 0
-
-    async def establish(_cls: Any, _device: BLEDevice, _name: str, **kwargs: Any) -> FakeClient:
-        nonlocal calls
-        calls += 1
-        await asyncio.sleep(0)
-        client = FakeClient()
-        client.disconnected_callback = kwargs["disconnected_callback"]
-        return client
-
-    transport = BleTransport(_device())
-    with patch.object(transport_module, "establish_connection", establish):
-        await asyncio.gather(transport.connect(), transport.connect())
-    assert calls == 1
-    assert transport.is_connected
-
-
-async def test_our_own_disconnect_does_not_call_back(fake_establish: FakeClient) -> None:
-    dropped: list[bool] = []
-    transport = BleTransport(_device(), disconnected_callback=lambda: dropped.append(True))
-    await transport.connect()
-    await transport.disconnect()
-    fake_establish.disconnected_callback(fake_establish)  # type: ignore[misc]
-    assert dropped == []
-
-
-async def test_a_failed_attempt_does_not_call_back() -> None:
-    dropped: list[bool] = []
-
-    async def establish(_cls: Any, _device: BLEDevice, _name: str, **kwargs: Any) -> FakeClient:
-        kwargs["disconnected_callback"](FakeClient())
-        raise BleakError("Disconnected during connect")
-
-    with (
-        patch.object(transport_module, "establish_connection", establish),
-        pytest.raises(GrundfosConnectionError),
-    ):
-        await BleTransport(
-            _device(), max_attempts=1, disconnected_callback=lambda: dropped.append(True)
-        ).connect()
-    assert dropped == []
-
-
-async def test_pieces_kept_between_requests_are_bounded(fake_establish: FakeClient) -> None:
-    transport = BleTransport(_device())
-    await transport.connect()
-    assert fake_establish.notify_cb is not None
-    for _ in range(transport_module.MAX_PIECES_KEPT * 2):
-        fake_establish.notify_cb(None, bytearray(b"\x00"))
-    assert len(transport._pieces) == transport_module.MAX_PIECES_KEPT
-
-
-async def test_a_long_false_start_does_not_swallow_the_reply(
-    fake_establish: FakeClient, measured_2026_11_09: list[Exchange]
-) -> None:
-    """A stray 24 xx f8 e7 with a long LEN must not hide the genuine reply behind it."""
-    fake_establish.auto_reply = False
-    transport = BleTransport(_device(), request_timeout=1)
-    await transport.connect()
-    assert fake_establish.notify_cb is not None
-    task = await _pending_request(transport, Telegram.request(get_request(ObjectRef(93, 290))))
-    fake_establish.notify_cb(None, bytearray(bytes.fromhex("24 40 f8 e7 0a")))
-    reply = measured_2026_11_09[0].reply
-    for start in range(0, len(reply), 20):
-        fake_establish.notify_cb(None, bytearray(reply[start : start + 20]))
-    assert (await task).raw == reply
-
-
-# --- Subscribing and pairing evidence (fix plan B2, B5, B7) ---------------------------------------
-
-
-async def test_subscribing_is_retried_once_on_the_same_link(fake_establish: FakeClient) -> None:
-    attempts: list[int] = []
-    original = fake_establish.start_notify
-
-    async def flaky(char: str, callback: Callable[[Any, bytearray], None]) -> None:
-        attempts.append(1)
-        if len(attempts) == 1:
-            raise BleakError("Insufficient authentication")
-        await original(char, callback)
-
-    fake_establish.start_notify = flaky  # type: ignore[method-assign]
-    transport = BleTransport(_device())
-    await transport.connect()
-    assert transport.is_connected
-    assert len(attempts) == 2
-
-
-async def test_a_refused_subscription_is_never_pairing_evidence(
-    fake_establish: FakeClient,
-) -> None:
-    async def refused(*_args: Any) -> None:
-        raise BleakError("[org.bluez.Error.AuthenticationFailed] Authentication Failed")
-
-    fake_establish.start_notify = refused  # type: ignore[method-assign]
-    with pytest.raises(GrundfosConnectionError) as caught:
-        await BleTransport(_device()).connect()
-    assert not isinstance(caught.value, PairingRequired)
-
-
-async def test_a_proxy_that_cannot_pair_is_reported_at_once() -> None:
-    establish, calls = _establish_sequence(
-        NotImplementedError(
-            "Pairing is not available in this version ESPHome; "
-            "Upgrade the ESPHome version on the device."
-        ),
-        FakeClient(),
-    )
-    with (
-        patch.object(transport_module, "establish_connection", establish),
-        pytest.raises(PairingUnsupported),
-    ):
-        await BleTransport(_device(), max_attempts=2).connect()
-    assert len(calls) == 1
-
-
 @pytest.mark.parametrize(
-    ("text", "refused"),
+    ("error", "expected", "code"),
     [
-        ("Failed to connect after 1 attempt(s): Pairing failed due to error: 82", True),
-        ("Pairing failed due to error: 820", False),
-        ("pairing failed, 82 devices nearby", False),
+        (BleakError("Pairing failed due to error: 82"), PairingRequired, 82),
+        (
+            BleakError("[org.bluez.Error.AuthenticationFailed] Authentication Failed"),
+            PairingRequired,
+            None,
+        ),
+        (
+            NotImplementedError("Pairing is not available in this version ESPHome"),
+            PairingUnsupported,
+            None,
+        ),
+        (BleakError("Pairing failed due to error: 99"), GrundfosConnectionError, 99),
     ],
-    ids=["wrapped", "other-code", "loose-text"],
+    ids=["reason-82", "bluez", "no-pairing", "transient"],
 )
-async def test_only_bleak_esphome_refusal_text_counts(text: str, refused: bool) -> None:
-    establish, _ = _establish_sequence(BleakError(text))
+async def test_connection_failures_become_this_librarys(
+    error: Exception, expected: type[Exception], code: int | None
+) -> None:
+    async def establish(*_args: Any, **_kwargs: Any) -> Any:
+        raise error
+
     with (
-        patch.object(transport_module, "establish_connection", establish),
+        patch.object(link_module, "establish_connection", establish),
         pytest.raises(GrundfosConnectionError) as caught,
     ):
         await BleTransport(_device(), max_attempts=1).connect()
-    assert isinstance(caught.value, PairingRequired) is refused
+    assert type(caught.value) is expected
+    assert caught.value.error_code == code
+    assert caught.value.__cause__ is not None
 
 
-# --- Which path an attempt used (fix plan C2) -----------------------------------------------------
+async def test_pairing_registers_the_bluez_agent_and_polling_does_not() -> None:
+    seen: list[bool] = []
 
+    @contextlib.asynccontextmanager
+    async def agent(_device: BLEDevice, *, enabled: bool = True) -> AsyncIterator[None]:
+        seen.append(enabled)
+        yield
 
-class _Scanner:
-    def __init__(self, source: str) -> None:
-        self.source = source
-
-
-class _HaLikeClient:
-    """Stands in for habluetooth's client: picks its backend in a private method."""
-
-    chosen = "proxy-b"
-
-    def __init__(self, *_args: Any, **_kwargs: Any) -> None:
-        pass
-
-    def _async_get_best_available_backend_and_device(self, _manager: Any) -> Any:
-        return type("Backend", (), {"scanner": _Scanner(self.chosen)})()
-
-
-async def test_the_source_habluetooth_chose_is_recorded() -> None:
-    async def establish(cls: Any, _device: BLEDevice, _name: str, **_kwargs: Any) -> Any:
-        cls()._async_get_best_available_backend_and_device(None)
-        raise BleakError("Pairing failed due to error: 82")
-
-    transport = BleTransport(_device(), max_attempts=1)
     with (
-        patch.object(
-            transport_module.bleak_retry_connector, "BleakClientWithServiceCache", _HaLikeClient
-        ),
-        patch.object(transport_module, "establish_connection", establish),
-        pytest.raises(PairingRequired),
+        patched_establish(FakeClient()),
+        patch.object(link_module, "bluez_pairing_agent", agent),
     ):
-        await transport.connect()
-    assert transport.last_source == "proxy-b"
+        await BleTransport(_device(), pairing=True).connect()
+        await BleTransport(_device()).connect()
+    assert seen == [True, False]
 
 
-async def test_without_habluetooth_the_source_comes_from_the_device(
-    fake_establish: FakeClient,
-) -> None:
-    transport = BleTransport(_device())
-    assert transport.last_source is None
-    await transport.connect()
-    assert transport.last_source == "00:11:22:33:44:55"
+def test_the_bluez_helpers_are_still_importable_from_here() -> None:
+    assert remove_bluez_bond.__module__ == "ble_bond.bluez"
+    assert transport_module.GENI_CHARACTERISTIC_UUID.startswith("859cffd1")
