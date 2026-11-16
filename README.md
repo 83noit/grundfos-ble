@@ -29,9 +29,12 @@ The library is tested on one ALPHA2 GO and comes with no warranty (see the
   Bluetooth button was just pressed.
 - Connects through bleak and bleak-retry-connector, pairs on every connection, and talks GENIbus
   over the single GENI characteristic. Only ESPHome Bluetooth proxies have been tested. On a
-  local BlueZ adapter it registers the pairing agent BlueZ needs while it pairs; that path is
-  untested on hardware here. WinRT pairing failures are not recognised as `PairingRequired` and
-  surface as `GrundfosConnectionError`.
+  local BlueZ adapter it registers the pairing agent BlueZ needs when a new bond is expected
+  (`BleTransport(..., pairing=True)`); that path is untested on hardware here. WinRT pairing
+  failures are not recognised as `PairingRequired` and surface as `GrundfosConnectionError`.
+- Matches each reply to its request by shape, as GENIbus replies carry no request id, and closes
+  the link whenever a request does not complete with a reply, so a late answer cannot be taken
+  for the next request's.
 - Reads flow, head, power, voltage, current, speed, electronics temperature, control and
   operation mode, setpoint, factory limits, the panel setting, flow limiters, AutoNight, alarms,
   warnings and, where the pump has them, statistics, temperatures and energy. The stored panel
@@ -101,7 +104,11 @@ through ESPHome proxies, or BlueZ `AuthenticationFailed`). A link that connects 
 shows up as `reply_seen` staying false; outside pairing that points at the radio, not the bond,
 so do not treat it as a reason to re-pair. A pump losing a bond has never been observed, so how
 that looks is unknown. A local BlueZ adapter would keep reconnecting with the dropped bond and never
-pair again, so call `remove_bluez_bond(device)` before re-pairing through one.
+pair again, so call `remove_bluez_bond(device)` before re-pairing through one, once the button
+has been pressed. An ESPHome proxy whose firmware cannot pair raises `PairingUnsupported`; the
+pump answers only an encrypted link, so that proxy needs a newer ESPHome. `BleTransport.last_source`
+names the adapter or proxy the latest attempt went through, so a refusal can be pinned on the
+path that saw it.
 
 ## Protocol
 

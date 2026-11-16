@@ -14,12 +14,48 @@ change defaults; a patch release only fixes bugs.
   enables them, a pump writes only if it was created with `allow_writes=True`, so upgrading the
   library never starts writes on its own.
 - `BleTransport` is an async context manager: `async with` connects and then disconnects.
+- `PairingUnsupported`, raised when an ESPHome proxy's firmware cannot pair at all. Retrying or
+  pressing the pump's button cannot help; the proxy's ESPHome needs updating.
+- `ObjectVersionError`, raised for one object when the pump answers it with a version this
+  library has no layout for. Every object the probe reads now has a version, from the real pump.
+- `BleTransport.last_source`: the adapter or proxy the latest connection attempt went through,
+  read from Home Assistant's choice when available.
+- `BleTransport(..., pairing=True)`, and `Transport.request(..., expect=...)` for a check the
+  reply must pass.
+- `ProbeResult.denied` and `ProbeResult.unknown`, telling objects the pump said it lacks from
+  objects that got no usable answer.
+- `setpoint_wire`, the inverse of `setpoint_display`.
+- `ReplayTransport` can lag, ignore chosen requests, deliver stray or duplicate frames and
+  answer BUSY once, and closes the link on a timeout as `BleTransport` does.
 - `THIRD_PARTY_NOTICES.md`, shipped in the wheel and the sdist, with the copyright and MIT
   notice of alpha-hwr, from which the BlueZ pairing agent is adapted. The README said no code
   from the acknowledged projects was used; that has not been true since 0.1.1.
 
 ### Changed
 
+- **Breaking:** `Measurements.shaft_power_w` is now `dc_power_w`. The value at motor-state
+  offset 16 is probably the DC power the GO app shows, not shaft power; it stays unconfirmed.
+- **Breaking:** `Identity.family`, `type` and `version` are `None` when the pump reports 255
+  ("not available"), and such an identity matches no profile.
+- **Breaking:** the AUTOADAPT modes have no entry in `USER_SETPOINTS`. The GO app selects them
+  with the control mode alone.
+- Every connection waits 0.5 s after subscribing before its first write, through a proxy too.
+  ESPHome measured on an ALPHA3 that requests sent within 200 ms of subscribing were lost in
+  about half of the connections (esphome/esphome#22651); 0.1.3 paused on local adapters only.
+- A request that is cancelled or fails to write closes the link, as a timed-out one already
+  did, and a frame is taken as the reply only when its data classes match the request (and, for
+  objects, the type and, for the flow limiters, the limiter id). Other frames are logged and the
+  wait goes on; a `RequestTimeout` counts them.
+- A failed subscription is retried once on the same link and is never taken as a refusal.
+- `probe_capabilities` goes on after an object that gets no answer: it records it as unknown,
+  reconnects and probes the rest, instead of raising.
+- The BlueZ pairing agent is registered only when `pairing=True`, one at a time and under a path
+  per device; an ordinary poll no longer makes it the system's default agent.
+- `classic.parse_get_reply` reads two bytes per id for classes 11 to 13, and INFO scaling that
+  the library cannot do (extended precision, units outside the table) raises
+  `NotImplementedError` instead of returning a wrongly scaled value.
+- The frame assembler bounds LEN at the longest reply to a one-APDU request (71 bytes), and a
+  later complete frame wins over a false start, so a stray byte cannot hide the reply.
 - The "connected and subscribed" debug line no longer reports the MTU. On a local BlueZ adapter
   reading it made bleak warn `Using default MTU value` and report its default of 23, not the
   negotiated value. The transport writes 20-byte pieces whatever the MTU.
@@ -38,6 +74,12 @@ change defaults; a patch release only fixes bugs.
 
 ### Fixed
 
+- Head used 9806.65 Pa/m (g × 1000). The pump's own factor is 9804: its frames carry both
+  units, and its factory presets are whole multiples of it. Heads read about 0.03 % low, so the
+  CP III preset showed as 7.498 m.
+- Object status 0x81 no longer counts as "no such object"; it came from reading an APDU head
+  as an object status.
+- Infinite floats and missing enum bytes are no longer decoded as values or as zero.
 - The declared dependencies now install a working library. `bleak-retry-connector` 4.0 to 4.6
   leaves out `bluetooth-adapters` on Python 3.14 but still imports it, so the floor is now
   4.7.1 (and `bleak` 3.0.2, which it needs). `dbus-fast`, which the BlueZ pairing agent imports,
