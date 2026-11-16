@@ -93,6 +93,35 @@ connects on entry and disconnects on exit.
 The library never scans; you hand it a `BLEDevice`. Under Home Assistant that device comes
 from the Bluetooth integration and HA chooses the proxy.
 
+## Command line
+
+`grundfos-ble` talks to a pump through this computer's own Bluetooth adapter (an ESPHome proxy
+is only reachable from Home Assistant). Every command is read-only: none writes to the pump,
+and none sends arbitrary bytes.
+
+```console
+$ grundfos-ble scan                      # pumps nearby, with their advertisement flags
+$ grundfos-ble scan --watch --seconds 300 # every change of a pump's advertisement
+$ grundfos-ble pair AA:BB:CC:DD:EE:FF    # waits for the Bluetooth button, then pairs
+$ grundfos-ble read AA:BB:CC:DD:EE:FF --json
+$ grundfos-ble probe AA:BB:CC:DD:EE:FF   # which optional objects answer, and their versions
+$ grundfos-ble get AA:BB:CC:DD:EE:FF 88/25
+$ grundfos-ble watch AA:BB:CC:DD:EE:FF --interval 60 --verbose-timings
+$ grundfos-ble capture AA:BB:CC:DD:EE:FF session.hex --note "display: 1.0 m3/h"
+```
+
+`pair` makes a new bond on the pump. The pump has held at least two at once, but its maximum is
+not documented and it offers no way to forget one, so pair only computers you will keep using.
+`info` and `capture` leave out the serial number and production code unless you pass
+`--include-serial`, so their output can be shared; `capture` writes the fixture format
+`grundfos_ble.testing` reads. Add `-v` before the command to log every frame.
+
+On macOS the address is a CoreBluetooth UUID, not a MAC: take it from `scan`. The terminal needs
+Bluetooth permission (System Settings → Privacy & Security → Bluetooth), and during `pair` macOS
+asks in a dialog whether to connect to the pump; accept it within the button window. The pump
+takes one connection at a time, so close the GO app and pause Home Assistant's polling (disable
+the integration entry) while you use the command line.
+
 ## Pairing, in one paragraph
 
 The pump drops any link that is not encrypted within about two seconds, and accepts pairing

@@ -31,6 +31,9 @@ dependencies = [
     "bleak>=3.0.2",
 ]
 
+[project.scripts]
+grundfos-ble = "grundfos_ble.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/83noit/grundfos-ble"
 Repository = "https://github.com/83noit/grundfos-ble"
@@ -86,6 +89,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D", "ANN", "SLF001", "PLR2004", "ARG001"]
+"src/grundfos_ble/cli.py" = ["T201"]  # a command line prints
 
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"

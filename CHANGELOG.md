@@ -7,6 +7,14 @@ change defaults; a patch release only fixes bugs.
 
 ## [Unreleased]
 
+### Added
+
+- A read-only command line, `grundfos-ble`: `scan` (with `--watch`), `pair`, `info`, `read`,
+  `probe`, `get`, `watch` and `capture`. It goes through the computer's own Bluetooth adapter,
+  never writes to the pump and sends no arbitrary bytes. `capture` writes a session in the test
+  fixture format; `info` and `capture` leave out the serial number and production code unless
+  asked.
+
 ## [0.3.0] - 2026-11-16
 
 ### Changed
