@@ -7,6 +7,8 @@ change defaults; a patch release only fixes bugs.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-16
+
 ### Added
 
 - A read-only command line, `grundfos-ble`: `scan` (with `--watch`), `pair`, `info`, `read`,
@@ -175,7 +177,8 @@ change defaults; a patch release only fixes bugs.
 - `grundfos_ble.testing`: a replay transport, a fixture format for recorded frames, and the
   recorded ALPHA2 GO frames as `FIXTURES`.
 
-[Unreleased]: https://github.com/83noit/grundfos-ble/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/83noit/grundfos-ble/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/83noit/grundfos-ble/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/83noit/grundfos-ble/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/83noit/grundfos-ble/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/83noit/grundfos-ble/compare/v0.1.2...v0.1.3

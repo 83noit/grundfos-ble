@@ -58,7 +58,7 @@ from grundfos_ble.registry.alpha2go import (
 )
 from grundfos_ble.transport import BleTransport, Transport
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "ALPHA2_GO",
