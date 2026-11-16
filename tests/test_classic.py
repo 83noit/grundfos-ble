@@ -8,22 +8,22 @@ from grundfos_ble.genibus.apdu import Ack, Apdu, DataClass, Operation
 from grundfos_ble.genibus.telegram import Telegram
 
 from .conftest import (
+    CONSTRUCTED_START,
+    CONSTRUCTED_STOP,
+    CONSTRUCTED_STRING_PRODUCT_NAME,
     GO_IDENTITY_REVERSED,
-    GO_START,
-    GO_STOP,
-    GO_STRING_PRODUCT_NAME,
     HWR_STRING_REPLY,
 )
 
 
 def test_commands_match_go_app_frames() -> None:
-    assert Telegram.request(classic.command(6)).encode() == GO_START
-    assert Telegram.request(classic.command(5)).encode() == GO_STOP
+    assert Telegram.request(classic.command(6)).encode() == CONSTRUCTED_START
+    assert Telegram.request(classic.command(5)).encode() == CONSTRUCTED_STOP
 
 
 def test_string_request_and_reply() -> None:
     request = classic.get_request(DataClass.ASCII_STRINGS, (1,))
-    assert Telegram.request(request).encode() == GO_STRING_PRODUCT_NAME
+    assert Telegram.request(request).encode() == CONSTRUCTED_STRING_PRODUCT_NAME
     reply = Telegram.decode(HWR_STRING_REPLY)
     assert classic.parse_string_reply(reply.apdu) == "ALPHA HWR"
     with pytest.raises(NackError):

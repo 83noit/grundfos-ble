@@ -25,11 +25,11 @@ from grundfos_ble.genibus.telegram import Telegram
 from grundfos_ble.testing import Exchange
 
 from .conftest import (
+    CONSTRUCTED_SET_ACK_FAILED,
+    CONSTRUCTED_SET_ACK_OK,
     GO_SET_AUTONIGHT_OFF,
     GO_SET_AUTONIGHT_ON,
     GO_SET_CONTROL_MODE_14,
-    SET_ACK_FAILED,
-    SET_ACK_OK,
 )
 
 
@@ -119,8 +119,11 @@ def test_set_request_matches_go_app_frames() -> None:
 
 
 def test_parse_set_reply() -> None:
-    assert parse_set_reply(Telegram.decode(SET_ACK_OK).apdu) == ObjectStatus.OK
-    assert parse_set_reply(Telegram.decode(SET_ACK_FAILED).apdu) == ObjectStatus.OPERATION_FAILED
+    assert parse_set_reply(Telegram.decode(CONSTRUCTED_SET_ACK_OK).apdu) == ObjectStatus.OK
+    assert (
+        parse_set_reply(Telegram.decode(CONSTRUCTED_SET_ACK_FAILED).apdu)
+        == ObjectStatus.OPERATION_FAILED
+    )
     assert parse_set_reply(Apdu(10, 0, b"\x07")) == ObjectStatus.OPERATION_FAILED
     with pytest.raises(ProtocolError, match="one byte"):
         parse_set_reply(Apdu(10, 0, b"\x00\x00"))

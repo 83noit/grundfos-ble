@@ -16,7 +16,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import IntEnum
 
-from grundfos_ble.exceptions import NackError, ObjectError, ProtocolError
+from grundfos_ble.exceptions import NackError, ObjectError, ObjectVersionError, ProtocolError
 from grundfos_ble.genibus.apdu import Ack, Apdu, DataClass, Operation
 
 OBJECT_HEADER_SIZE = 7
@@ -148,9 +148,14 @@ def expect_object(
     expected_type: int,
     *,
     min_size: int = 0,
+    version: int | None = None,
     raw: bytes | None = None,
 ) -> ObjectReply:
-    """Return the first reply, checking its type and size; raise on a bad status."""
+    """Return the first reply, checking its type, version and size; raise on a bad status.
+
+    A different ``version`` raises :class:`ObjectVersionError`: the layout may have changed
+    with it, so decoding the data by the known layout could give wrong values.
+    """
     for reply in replies:
         if not reply.ok:
             raise ObjectError(reply.header.status, raw)
@@ -158,6 +163,8 @@ def expect_object(
             raise ProtocolError(
                 f"expected object type {expected_type}, pump sent type {reply.header.type}", raw
             )
+        if version is not None and reply.header.version != version:
+            raise ObjectVersionError(expected_type, version, reply.header.version, raw)
         if len(reply.data) < min_size:
             raise ProtocolError(
                 f"object type {expected_type} has {len(reply.data)} bytes, need {min_size}", raw
@@ -193,21 +200,21 @@ def parse_set_reply(apdu: Apdu, raw: bytes | None = None) -> ObjectStatus:
 
 
 def read_f32(data: bytes, offset: int) -> float | None:
-    """Big-endian float at ``offset``; None when absent, "not available" or NaN."""
+    """Big-endian float at ``offset``; None when absent, "not available", NaN or infinite."""
     chunk = data[offset : offset + 4]
     if len(chunk) < 4 or chunk in (NOT_AVAILABLE, NAN):
         return None
     value: float = struct.unpack(">f", chunk)[0]
-    return None if math.isnan(value) else value
+    return value if math.isfinite(value) else None
 
 
 def read_f64(data: bytes, offset: int) -> float | None:
-    """Big-endian double at ``offset``; None when absent or NaN."""
+    """Big-endian double at ``offset``; None when absent, NaN or infinite."""
     chunk = data[offset : offset + 8]
     if len(chunk) < 8:
         return None
     value: float = struct.unpack(">d", chunk)[0]
-    return None if math.isnan(value) else value
+    return value if math.isfinite(value) else None
 
 
 def read_uint(data: bytes, offset: int, size: int) -> int | None:

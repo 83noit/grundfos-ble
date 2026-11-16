@@ -22,7 +22,9 @@ from grundfos_ble.exceptions import (
     NackError,
     NotSupported,
     ObjectError,
+    ObjectVersionError,
     PairingRequired,
+    PairingUnsupported,
     ProtocolError,
     RequestTimeout,
 )
@@ -52,6 +54,7 @@ from grundfos_ble.registry.alpha2go import (
     profile_for,
     setpoint_display,
     setpoint_unit,
+    setpoint_wire,
 )
 from grundfos_ble.transport import BleTransport, Transport
 
@@ -82,9 +85,11 @@ __all__ = [
     "NackError",
     "NotSupported",
     "ObjectError",
+    "ObjectVersionError",
     "OperationMode",
     "OperationState",
     "PairingRequired",
+    "PairingUnsupported",
     "PanelSetting",
     "ProbeResult",
     "ProtocolError",
@@ -100,4 +105,5 @@ __all__ = [
     "remove_bluez_bond",
     "setpoint_display",
     "setpoint_unit",
+    "setpoint_wire",
 ]

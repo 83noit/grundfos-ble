@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Final
 
 from grundfos_ble.exceptions import (
+    GrundfosConnectionError,
     NackError,
     NotSupported,
     ObjectError,
@@ -15,7 +16,7 @@ from grundfos_ble.exceptions import (
 )
 from grundfos_ble.genibus import classic, objects
 from grundfos_ble.genibus.apdu import Ack, Apdu, DataClass
-from grundfos_ble.genibus.objects import ObjectReply, ObjectStatus
+from grundfos_ble.genibus.objects import OBJECT_HEADER_SIZE, ObjectReply, ObjectStatus
 from grundfos_ble.genibus.telegram import Telegram
 from grundfos_ble.registry import alpha2go
 from grundfos_ble.registry.alpha2go import (
@@ -32,8 +33,12 @@ from grundfos_ble.transport import Transport
 
 _LOGGER = logging.getLogger(__name__)
 
-ABSENT_OBJECT_STATUSES: Final = frozenset({int(ObjectStatus.OPERATION_FAILED), 0x81})
-"""Object statuses that mean the pump has no such object (0x81 is the ALPHA HWR's)."""
+ABSENT_OBJECT_STATUSES: Final = frozenset({int(ObjectStatus.OPERATION_FAILED)})
+"""Object statuses that mean the pump has no such object.
+
+An ALPHA HWR answers an unknown object with the APDU head ``0A 81`` (ACK 2, "unknown data
+item", one data byte naming the item); that is a :class:`NackError`, handled as
+:class:`NotSupported` by the ACK, not an object status."""
 
 WRITES_ENABLED: Final = False
 """Whether this release lets :class:`GrundfosPump` write to a pump. It does not: writes are
@@ -51,11 +56,11 @@ telegram it is given."""
 
 @dataclass(frozen=True, slots=True)
 class Identity:
-    """Who the pump says it is."""
+    """Who the pump says it is. None = the pump reported the value as not available (255)."""
 
-    family: int
-    type: int
-    version: int
+    family: int | None
+    type: int | None
+    version: int | None
     product_name: str | None = None
     product_number: str | None = None
     serial_number: str | None = None
@@ -68,6 +73,8 @@ class Identity:
     @property
     def profile(self) -> Profile | None:
         """The profile this library has for the pump, if any."""
+        if self.family is None or self.type is None:
+            return None
         return alpha2go.profile_for(self.family, self.type)
 
 
@@ -85,7 +92,8 @@ class Measurements:
     dc_link_voltage_v: float | None
     current_a: float | None
     power_w: float | None
-    shaft_power_w: float | None
+    dc_power_w: float | None
+    """Motor-state offset 16; probably the power the GO app shows. Meaning unconfirmed."""
     speed_rpm: float | None
     electronics_temperature_c: float | None
     raw_process_values: bytes = field(repr=False, default=b"")
@@ -176,13 +184,21 @@ class Temperatures:
 
 @dataclass(frozen=True, slots=True)
 class ProbeResult:
-    """Which optional objects the pump answered, with the raw frames for the record."""
+    """Which optional objects the pump answered, with the raw frames for the record.
+
+    Every probed object lands in exactly one of ``supported``, ``denied`` (the pump said it has
+    no such object: a NACK or object status 4) and ``unknown`` (no usable answer: silence, a
+    lost link, a CRC error, an unexpected layout). An unknown object may well be supported, so
+    callers should keep what they knew about it.
+    """
 
     supported: frozenset[str]
     frames: dict[str, bytes]
     """Raw reply frame per object key, including the failures' frames when a reply came."""
     errors: dict[str, str]
-    """Why each unsupported object was judged so."""
+    """Why each object that is not supported was judged so."""
+    denied: frozenset[str] = frozenset()
+    unknown: frozenset[str] = frozenset()
 
 
 # --- Pump ---------------------------------------------------------------------------------------
@@ -213,15 +229,19 @@ class GrundfosPump:
 
     # -- low level ---------------------------------------------------------------------------
 
-    async def _request(self, *apdus: Apdu) -> Telegram:
-        return await self._transport.request(Telegram.request(*apdus))
+    async def _request(
+        self, *apdus: Apdu, expect: Callable[[Telegram], bool] | None = None
+    ) -> Telegram:
+        return await self._transport.request(Telegram.request(*apdus), expect=expect)
 
     async def get_object(self, spec: ObjectSpec) -> ObjectReply:
         """GET one object and validate it against ``spec``.
 
-        Raises :class:`NotSupported` when the pump says it has no such object.
+        Raises :class:`NotSupported` when the pump says it has no such object, and
+        :class:`~grundfos_ble.exceptions.ObjectVersionError` when it answers with a version
+        this library has no layout for.
         """
-        reply = await self._request(objects.get_request(spec.ref))
+        reply = await self._request(objects.get_request(spec.ref), expect=_answers(spec))
         raw = reply.raw
         try:
             replies = objects.parse_get_reply(reply.apdu, raw)
@@ -230,11 +250,7 @@ class GrundfosPump:
                 raise NotSupported(f"{spec.key} ({spec.ref}): {err}") from err
             raise
         try:
-            return (
-                objects.expect_object(replies, spec.type, min_size=spec.min_size, raw=raw)
-                if spec.type is not None
-                else _first_ok(replies, spec, raw)
-            )
+            return _check_object(replies, spec, raw)
         except ObjectError as err:
             if err.status in ABSENT_OBJECT_STATUSES:
                 raise NotSupported(f"{spec.key} ({spec.ref}): status {err.status}") from err
@@ -273,9 +289,9 @@ class GrundfosPump:
         reply = await self._request(classic.get_request(DataClass.MEASURED_DATA, ids))
         values = classic.parse_get_reply(reply.apdu, DataClass.MEASURED_DATA, ids, reply.raw)
         identity = Identity(
-            family=values[IdentityId.UNIT_FAMILY],
-            type=values[IdentityId.UNIT_TYPE],
-            version=values[IdentityId.UNIT_VERSION],
+            family=_available(values[IdentityId.UNIT_FAMILY]),
+            type=_available(values[IdentityId.UNIT_TYPE]),
+            version=_available(values[IdentityId.UNIT_VERSION]),
         )
         if not strings:
             return identity
@@ -335,7 +351,7 @@ class GrundfosPump:
     async def read_autonight(self) -> bool:
         """Read whether AutoNight is enabled."""
         reply = await self.get_object(alpha2go.AUTONIGHT)
-        return bool(reply.data[0])
+        return bool(_required(alpha2go.AUTONIGHT.decode(reply.data), "enabled", reply.data))
 
     async def read_faults(self) -> Faults:
         """Read active alarms and warnings (answered on an ALPHA2 GO, never with a fault active)."""
@@ -364,12 +380,19 @@ class GrundfosPump:
     ) -> ProbeResult:
         """Try each optional object once and record which ones this pump answers.
 
-        An object that reports busy is tried once more before it is judged absent.
+        An object that reports busy is tried once more before it is judged. An object the pump
+        does not answer (or answers on a link that then fails) is recorded as unknown, the link
+        is brought up again and the probe goes on; if it cannot be, the rest are unknown too.
+        So one silent object never costs the caller the whole probe, or a new bond.
         """
         supported: set[str] = set()
+        denied: set[str] = set()
+        unknown: set[str] = set()
         frames: dict[str, bytes] = {}
         errors: dict[str, str] = {}
-        for spec in specs:
+        remaining = list(specs)
+        while remaining:
+            spec = remaining.pop(0)
             for final_try in (False, True):
                 outcome = await self._probe_one(spec, frames)
                 busy = isinstance(outcome, ObjectError) and outcome.status == ObjectStatus.BUSY
@@ -377,23 +400,33 @@ class GrundfosPump:
                     break
             if outcome is None:
                 supported.add(spec.key)
-            else:
-                errors[spec.key] = f"{type(outcome).__name__}: {outcome}"
-        return ProbeResult(frozenset(supported), frames, errors)
+                continue
+            errors[spec.key] = f"{type(outcome).__name__}: {outcome}"
+            if _denies(outcome):
+                denied.add(spec.key)
+                continue
+            unknown.add(spec.key)
+            if isinstance(outcome, GrundfosConnectionError) and remaining:
+                try:
+                    await self._transport.connect()
+                except GrundfosConnectionError as err:
+                    for rest in remaining:
+                        unknown.add(rest.key)
+                        errors[rest.key] = f"not probed: {type(err).__name__}: {err}"
+                    break
+        return ProbeResult(
+            frozenset(supported), frames, errors, frozenset(denied), frozenset(unknown)
+        )
 
     async def _probe_one(
         self, spec: ObjectSpec, frames: dict[str, bytes]
-    ) -> NackError | ObjectError | ProtocolError | None:
+    ) -> ProtocolError | GrundfosConnectionError | None:
         try:
-            reply = await self._request(objects.get_request(spec.ref))
+            reply = await self._request(objects.get_request(spec.ref), expect=_answers(spec))
             if reply.raw is not None:
                 frames[spec.key] = reply.raw
-            replies = objects.parse_get_reply(reply.apdu, reply.raw)
-            if spec.type is not None:
-                objects.expect_object(replies, spec.type, min_size=spec.min_size, raw=reply.raw)
-            else:
-                _first_ok(replies, spec, reply.raw)
-        except (NackError, ObjectError, ProtocolError) as err:
+            _check_object(objects.parse_get_reply(reply.apdu, reply.raw), spec, reply.raw)
+        except (ProtocolError, GrundfosConnectionError) as err:
             return err
         return None
 
@@ -422,10 +455,11 @@ class GrundfosPump:
         """
         self._refuse_writes()
         limits = await self.read_factory_limits(mode)
+        # Compared in whole wire units: 8.5 m is 83334.0 Pa at 9804 Pa/m, the PP maximum.
         if (
             limits.min is not None
             and limits.max is not None
-            and not limits.min <= value <= limits.max
+            and not round(limits.min) <= round(value) <= round(limits.max)
         ):
             raise ValueError(f"setpoint {value} outside factory range {limits.min}..{limits.max}")
         current = await self.read_user_setpoint(mode)
@@ -456,7 +490,10 @@ class GrundfosPump:
         await self.command(Command.STOP)
 
     async def reset_alarm(self) -> None:
-        """Class-3 RESET ALARM (disabled in this release; documented for SCALA1 only)."""
+        """Class-3 RESET ALARM (disabled in this release).
+
+        Reported working on one SCALA1 (unreplicated); untested on the ALPHA2 GO.
+        """
         await self.command(Command.RESET_ALARM)
 
 
@@ -465,6 +502,67 @@ class GrundfosPump:
 
 def _f(value: float | int | bool | None) -> float | None:
     return None if value is None else float(value)
+
+
+def _available(value: int) -> int | None:
+    """Return a one-byte class-2 value, or None for 255 ("not available")."""
+    return None if value == classic.VALUE_NOT_AVAILABLE else value
+
+
+def _required(values: dict[str, float | int | bool | None], key: str, data: bytes) -> int:
+    """Return an integer field a decoded object must have; a missing byte is an error."""
+    value = values[key]
+    if value is None:
+        raise ProtocolError(f"object data too short for {key}: {data.hex(' ')}", data)
+    return int(value)
+
+
+def _denies(outcome: BaseException) -> bool:
+    """Return True when the pump positively said it has no such object."""
+    return isinstance(outcome, NackError) or (
+        isinstance(outcome, ObjectError) and outcome.status in ABSENT_OBJECT_STATUSES
+    )
+
+
+def _answers(spec: ObjectSpec) -> Callable[[Telegram], bool]:
+    """Return a check that a reply has the shape of ``spec``'s answer.
+
+    Used to tell the reply from a stray frame: a class-10 reply names the object's type, not
+    its id, so sibling objects of one type (alarms and warnings, the two limiters) look alike
+    unless their data says otherwise (``spec.leading``). Statuses and NACKs always match; the
+    version is checked afterwards so that a new version is reported, not waited out.
+    """
+
+    def check(reply: Telegram) -> bool:
+        apdu = reply.apdus[0]
+        if apdu.ack != Ack.OK or not apdu.data or apdu.data[0] != ObjectStatus.OK:
+            return True
+        if len(apdu.data) < OBJECT_HEADER_SIZE:
+            return False
+        if spec.type is not None and int.from_bytes(apdu.data[1:3], "big") != spec.type:
+            return False
+        data = apdu.data[OBJECT_HEADER_SIZE:]
+        return data[: len(spec.leading)] == spec.leading
+
+    return check
+
+
+def _check_object(
+    replies: Sequence[ObjectReply], spec: ObjectSpec, raw: bytes | None
+) -> ObjectReply:
+    """Return the object a GET for ``spec`` answered, checking status, type, version and size."""
+    if spec.type is not None:
+        reply = objects.expect_object(
+            replies, spec.type, min_size=spec.min_size, version=spec.version, raw=raw
+        )
+    else:
+        reply = _first_ok(replies, spec, raw)
+    if not reply.data.startswith(spec.leading):
+        raise ProtocolError(
+            f"{spec.key}: data starts {reply.data[:4].hex(' ')}, expected {spec.leading.hex(' ')}",
+            raw,
+        )
+    return reply
 
 
 def _first_ok(replies: Sequence[ObjectReply], spec: ObjectSpec, raw: bytes | None) -> ObjectReply:
@@ -505,7 +603,7 @@ def decode_measurements(process: bytes, motor: bytes) -> Measurements:
         dc_link_voltage_v=_f(m["dc_link_voltage_v"]),
         current_a=_f(m["current_a"]),
         power_w=_f(m["power_w"]),
-        shaft_power_w=_f(m["shaft_power_w"]),
+        dc_power_w=_f(m["dc_power_w"]),
         speed_rpm=_f(m["speed_rpm"]),
         electronics_temperature_c=_f(m["electronics_temperature_c"]),
         raw_process_values=process,
@@ -517,9 +615,9 @@ def decode_operation(data: bytes) -> OperationState:
     """Decode an object of type 303."""
     v = alpha2go.OPERATION.decode(data)
     return OperationState(
-        control_source=int(v["control_source"] or 0),
-        operation_mode=int(v["operation_mode"] or 0),
-        control_mode=int(v["control_mode"] or 0),
+        control_source=_required(v, "control_source", data),
+        operation_mode=_required(v, "operation_mode", data),
+        control_mode=_required(v, "control_mode", data),
         setpoint=_f(v["setpoint"]),
     )
 
@@ -528,7 +626,7 @@ def decode_user_setpoint(data: bytes) -> UserSetpoint:
     """Decode an object of type 302."""
     v = alpha2go.USER_SETPOINTS[ControlMode.CONSTANT_PRESSURE].decode(data)
     return UserSetpoint(
-        feedback_id=int(v["feedback_id"] or 0),
+        feedback_id=_required(v, "feedback_id", data),
         setpoint=_f(v["setpoint"]),
         kp=_f(v["kp"]),
         ti=_f(v["ti"]),
@@ -542,8 +640,8 @@ def decode_flow_limiter(data: bytes) -> FlowLimiter:
     v = alpha2go.MAX_FLOW_LIMITER.decode(data)
     limit = _f(v["limit_m3s"])
     return FlowLimiter(
-        limiter_id=int(v["limiter_id"] or 0),
-        enabled=bool(v["enabled"]),
+        limiter_id=_required(v, "limiter_id", data),
+        enabled=bool(_required(v, "enabled", data)),
         limit_m3h=None if limit is None else limit * SECONDS_PER_HOUR,
         raw=data,
     )

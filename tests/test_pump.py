@@ -1,5 +1,6 @@
 """GrundfosPump against recorded frames via the replay transport."""
 
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -22,19 +23,19 @@ from grundfos_ble.pump import (
 from grundfos_ble.registry import alpha2go
 from grundfos_ble.registry.alpha2go import ControlMode
 from grundfos_ble.registry.base import ObjectSpec
-from grundfos_ble.testing import Exchange, ReplayTransport
+from grundfos_ble.testing import Exchange, ReplayTransport, load_fixture
 
 from .conftest import (
+    CONSTRUCTED_SET_ACK_FAILED,
+    CONSTRUCTED_SET_ACK_OK,
+    CONSTRUCTED_START,
+    CONSTRUCTED_STOP,
     FIXTURES,
     GO_SET_CONTROL_MODE_14,
     GO_SET_CP_SETPOINT_2_5M,
     GO_SET_MAX_LIMITER_3_0,
-    GO_START,
-    GO_STOP,
     HWR_NO_ALARM_REPLY,
     HWR_STRING_REPLY,
-    SET_ACK_FAILED,
-    SET_ACK_OK,
 )
 
 
@@ -50,7 +51,7 @@ async def test_measurements_match_display_2026_11_07(replay_2026_11_07: ReplayTr
     assert values.dc_link_voltage_v == pytest.approx(332.7, abs=0.1)
     assert values.current_a == pytest.approx(0.0382, abs=1e-4)
     assert values.power_w == pytest.approx(4.01, abs=0.01)
-    assert values.shaft_power_w == pytest.approx(3.98, abs=0.01)
+    assert values.dc_power_w == pytest.approx(3.98, abs=0.01)
     assert values.speed_rpm == pytest.approx(1640.5, abs=0.5)
     assert values.electronics_temperature_c == pytest.approx(44.0)
     assert values.media_temperature_c is None
@@ -150,10 +151,12 @@ async def test_probe_capabilities_records_frames_and_errors() -> None:
     pump = GrundfosPump(transport)
     result = await pump.probe_capabilities((alpha2go.ALARMS, alpha2go.STATISTICS))
     assert result.supported == {"alarms"}
+    assert result.denied == {"statistics"}
     assert result.frames["alarms"] == HWR_NO_ALARM_REPLY
     assert "ObjectError" in result.errors["statistics"]
-    with pytest.raises(RequestTimeout):
-        await pump.probe_capabilities((alpha2go.ENERGY,))
+    silent = await pump.probe_capabilities((alpha2go.ENERGY,))
+    assert silent.unknown == {"energy"}
+    assert "RequestTimeout" in silent.errors["energy"]
 
 
 def classic_apdu(data_class: int, op: int, data: bytes):
@@ -299,13 +302,13 @@ async def test_write_path_sends_go_app_frames(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr("grundfos_ble.pump.WRITES_ENABLED", True)
     transport = ReplayTransport(
         [
-            _reply(GO_SET_CONTROL_MODE_14, SET_ACK_OK),
+            _reply(GO_SET_CONTROL_MODE_14, CONSTRUCTED_SET_ACK_OK),
             _reply(
-                GO_START,
+                CONSTRUCTED_START,
                 Telegram.request(classic_apdu(3, 0, b""), da=0xF8, sa=0xE7, sd=0x24).encode(),
             ),
             _reply(
-                GO_STOP,
+                CONSTRUCTED_STOP,
                 Telegram.request(classic_apdu(3, 0, b""), da=0xF8, sa=0xE7, sd=0x24).encode(),
             ),
             _reply(
@@ -314,7 +317,7 @@ async def test_write_path_sends_go_app_frames(monkeypatch: pytest.MonkeyPatch) -
                         "grundfos_ble.genibus.objects", fromlist=["set_request"]
                     ).set_request(ObjectRef(90, 8), 333, 1, b"\x01")
                 ).encode(),
-                SET_ACK_FAILED,
+                CONSTRUCTED_SET_ACK_FAILED,
             ),
         ]
     )
@@ -379,15 +382,212 @@ async def test_busy_object_is_tried_again_and_a_bad_frame_does_not_abort_the_pro
     calls = []
     original = transport.request
 
-    async def counting(telegram: Telegram, *, timeout: float | None = None) -> Telegram:
+    async def counting(telegram: Telegram, **kwargs: Any) -> Telegram:
         calls.append(telegram.encode())
-        return await original(telegram, timeout=timeout)
+        return await original(telegram, **kwargs)
 
     pump = GrundfosPump(transport)
     pump._transport = MagicMock(request=counting)
     result = await pump.probe_capabilities((alpha2go.ALARMS, alpha2go.STATISTICS))
     assert result.supported == {"alarms"}
+    assert result.unknown == {"statistics"}  # busy twice says nothing about support
     assert len(calls) == 3
     assert "ObjectError" in result.errors["statistics"]
     with pytest.raises(ObjectError):
         await pump.get_object(alpha2go.STATISTICS)
+
+
+# --- Review fixes (2026-11): probing, shapes, versions, decoders ----------------------------------
+
+FULL = FIXTURES / "measured-2026-11-09-full.hex"
+
+
+def _full() -> ReplayTransport:
+    return ReplayTransport.from_fixture(FULL)
+
+
+async def test_a_silent_object_does_not_abort_the_probe() -> None:
+    """One ignored object must not cost the user another press of the button (D2)."""
+    transport = _full()
+    transport.silent_on.add(_get_frame(alpha2go.ALARMS.ref))
+    result = await GrundfosPump(transport).probe_capabilities()
+    assert result.unknown == {"alarms"}
+    assert result.denied == frozenset()
+    assert result.supported == {s.key for s in alpha2go.OPTIONAL_OBJECTS} - {"alarms"}
+    assert transport.connects == 1  # the link closed on the timeout and was brought back
+
+
+async def test_a_probe_that_cannot_reconnect_marks_the_rest_unknown() -> None:
+    from grundfos_ble.exceptions import PairingRequired
+
+    class Refusing(ReplayTransport):
+        async def connect(self) -> None:
+            raise PairingRequired("refused", 82)
+
+    transport = Refusing(load_fixture(FULL))
+    transport.silent_on.add(_get_frame(alpha2go.OPERATION.ref))
+    result = await GrundfosPump(transport).probe_capabilities()
+    assert result.supported == frozenset()
+    assert result.unknown == {s.key for s in alpha2go.OPTIONAL_OBJECTS}
+    assert result.errors["alarms"].startswith("not probed: PairingRequired")
+
+
+async def test_a_corrupt_reply_is_unknown_not_denied() -> None:
+    """A CRC or layout error says nothing about support, so the caller keeps the object (D3)."""
+    transport = ReplayTransport(
+        [_reply(_get_frame(alpha2go.STATISTICS.ref), HWR_NO_ALARM_REPLY)]  # wrong type
+    )
+    result = await GrundfosPump(transport).probe_capabilities((alpha2go.STATISTICS,))
+    assert result.unknown == {"statistics"}
+    assert result.denied == frozenset()
+
+
+async def test_a_new_object_version_is_refused_per_object() -> None:
+    from grundfos_ble.exceptions import ObjectVersionError
+
+    reply = bytearray(Telegram.decode(HWR_NO_ALARM_REPLY).apdu.data)
+    reply[3] = 2  # version byte of the object header
+    frame = Telegram.request(classic_apdu(10, 0, bytes(reply)), da=0xF8, sa=0xE7, sd=0x24).encode()
+    transport = ReplayTransport([_reply(_get_frame(alpha2go.ALARMS.ref), frame)])
+    with pytest.raises(ObjectVersionError) as caught:
+        await GrundfosPump(transport).get_object(alpha2go.ALARMS)
+    assert (caught.value.expected, caught.value.received) == (1, 2)
+    assert caught.value.raw == frame
+    assert transport.is_connected or not transport.closed  # the link is not given up for it
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [s for s in alpha2go.OPTIONAL_OBJECTS if s.version is not None]
+    + [alpha2go.PROCESS_VALUES, alpha2go.MOTOR_STATE],
+    ids=lambda spec: spec.key,
+)
+def test_registry_versions_match_the_real_pump(spec: ObjectSpec) -> None:
+    exchange = next(e for e in load_fixture(FULL) if e.request == _get_frame(spec.ref))
+    header = Telegram.decode(exchange.reply).apdu.data[:7]
+    assert header[0] == 0
+    assert int.from_bytes(header[1:3], "big") == spec.type
+    assert header[3] == spec.version
+
+
+def test_every_optional_object_has_a_version() -> None:
+    assert all(spec.version is not None for spec in alpha2go.OPTIONAL_OBJECTS)
+
+
+async def test_a_sibling_limiter_reply_is_not_taken() -> None:
+    """The two limiters share a type; only the leading id byte tells them apart (A2)."""
+    exchanges = load_fixture(FULL)
+    minimum = next(e.reply for e in exchanges if e.request == _get_frame(ObjectRef(86, 601)))
+    transport = ReplayTransport([_reply(_get_frame(alpha2go.MAX_FLOW_LIMITER.ref), minimum)])
+    with pytest.raises(RequestTimeout):
+        await GrundfosPump(transport).get_object(alpha2go.MAX_FLOW_LIMITER)
+
+
+async def test_a_stray_frame_before_the_reply_is_skipped() -> None:
+    exchanges = load_fixture(FULL)
+    transport = ReplayTransport(exchanges)
+    transport.stray.append(exchanges[1].reply)  # motor state, while asking for process values
+    values = await GrundfosPump(transport).read_measurements()
+    assert values.flow_m3h == pytest.approx(1.004, abs=0.001)
+
+
+async def test_a_duplicated_reply_is_skipped() -> None:
+    transport = _full()
+    transport.duplicate = True
+    pump = GrundfosPump(transport)
+    await pump.read_statistics()
+    assert (await pump.read_temperatures()).media_c == pytest.approx(16.05, abs=0.01)
+
+
+async def test_alarms_and_warnings_cannot_be_told_apart_by_shape() -> None:
+    """Byte-identical sibling replies: only closing the link on a lost request protects them."""
+    exchanges = load_fixture(FULL)
+    alarms = next(e.reply for e in exchanges if e.request == _get_frame(ObjectRef(88, 0)))
+    warnings = next(e.reply for e in exchanges if e.request == _get_frame(ObjectRef(88, 11)))
+    assert alarms == warnings
+
+
+def test_identity_of_255_is_not_available() -> None:
+    from grundfos_ble.pump import Identity
+
+    identity = Identity(family=None, type=6, version=None)
+    assert identity.profile is None
+
+
+async def test_identity_read_maps_255_to_none() -> None:
+    from grundfos_ble.genibus import classic
+    from grundfos_ble.genibus.apdu import DataClass
+
+    request = Telegram.request(
+        classic.get_request(DataClass.MEASURED_DATA, (148, 149, 150))
+    ).encode()
+    reply = Telegram.request(
+        classic.Apdu(DataClass.MEASURED_DATA, 0, b"\xff\x06\x00"), da=0xF8, sa=0xE7, sd=0x24
+    ).encode()
+    identity = await GrundfosPump(ReplayTransport([_reply(request, reply)])).read_identity(
+        strings=False
+    )
+    assert (identity.family, identity.type, identity.version) == (None, 6, 0)
+    assert identity.profile is None
+
+
+@pytest.mark.parametrize(
+    ("decoder", "data"),
+    [
+        pytest.param(decode_operation, b"\x01\x00", id="operation"),
+        pytest.param(decode_user_setpoint, b"\x00", id="user-setpoint"),
+        pytest.param(decode_flow_limiter, b"\x01", id="limiter"),
+    ],
+)
+def test_missing_enum_bytes_are_an_error_not_zero(decoder: Any, data: bytes) -> None:
+    with pytest.raises(ProtocolError, match="too short"):
+        decoder(data)
+
+
+@pytest.mark.parametrize(
+    ("frame", "metres"),
+    [
+        ("27 1F E7 F8 0A 9B 56 00 12 01 2E 01 00 00 12 00 04 47 5A 4A 5A", 5.7),
+        ("27 1F E7 F8 0A 9B 56 00 10 01 2E 01 00 00 12 00 04 47 8F 9C B5", 7.5),
+        ("27 1F E7 F8 0A 9B 56 00 10 01 2E 01 00 00 12 00 04 47 19 2F B0", 4.0),
+        ("27 1F E7 F8 0A 9B 56 00 12 01 2E 01 00 00 12 00 04 47 A0 D8 78", 8.4),
+        ("27 1F E7 F8 0A 9B 56 00 10 01 2E 01 00 00 12 00 04 47 3F 7B 9C", 5.0),
+    ],
+    ids=["5.7m", "7.5m", "4.0m", "8.4m", "5.0m"],
+)
+def test_app_head_setpoints_read_back_to_the_centimetre(frame: str, metres: float) -> None:
+    """The GO app writes heads with 1e5/10.2; read with 9804 they land on the same cm (F1).
+
+    Frame heads from the GO-app capture (esphome-alpha2go docs/ble-traffic.md, 86/16 and 86/18).
+    """
+    from grundfos_ble.genibus.objects import read_f32
+
+    pa = read_f32(bytes.fromhex(frame), 17)
+    assert pa is not None
+    display = alpha2go.setpoint_display(ControlMode.CONSTANT_PRESSURE, pa)
+    assert display is not None
+    assert round(display[0], 2) == metres
+
+
+def test_head_factor_is_the_pumps_own() -> None:
+    """Ben's 93/290 frame: 4589.0498 Pa and 0.46808 m; the factory presets are 9804 × n."""
+    from grundfos_ble.genibus.objects import read_f32
+
+    data = Telegram.decode(load_fixture(FULL)[0].reply).apdu.data[7:]
+    pa, metres = read_f32(data, 4), read_f32(data, 28)
+    assert pa is not None
+    assert metres is not None
+    assert pa / metres == pytest.approx(9804.0, abs=0.01)
+    assert alpha2go.PA_PER_METRE == 9804.0
+    # The PP maximum (47 A2 C3 00) is exactly 8.5 m, and CP III's preset exactly 7.5 m.
+    assert alpha2go.setpoint_wire(ControlMode.PROPORTIONAL_PRESSURE, 8.5) == 83334.0
+    assert alpha2go.setpoint_display(ControlMode.CONSTANT_PRESSURE, 73530.0) == (7.5, "m")
+    assert alpha2go.setpoint_wire(ControlMode.CONSTANT_CURVE, 2000) == 2000
+    assert alpha2go.setpoint_wire(ControlMode.CONSTANT_FLOW, 3.6) == pytest.approx(0.001)
+    assert alpha2go.setpoint_wire(ControlMode.NONE, 1.0) is None
+
+
+def test_autoadapt_has_no_user_setpoint() -> None:
+    assert ControlMode.PP_AUTOADAPT not in alpha2go.USER_SETPOINTS
+    assert ControlMode.CP_AUTOADAPT not in alpha2go.USER_SETPOINTS
+    assert ControlMode.CP_AUTOADAPT in alpha2go.FACTORY_LIMITS

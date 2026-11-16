@@ -89,6 +89,10 @@ class ObjectSpec:
     source: str = ""
     min_size: int = 0
     version: int | None = None
+    """Expected object version; a reply with another one is refused. None accepts any."""
+    leading: bytes = b""
+    """Bytes the object's data starts with (a limiter's id), telling it from a sibling object
+    of the same type; a reply whose data starts otherwise is not this object's."""
     fields: tuple[Field, ...] = field(default_factory=tuple)
 
     def decode(self, data: bytes) -> dict[str, Value]:

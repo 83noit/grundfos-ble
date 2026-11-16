@@ -49,14 +49,39 @@ def _check(apdu: Apdu, data_class: int, raw: bytes | None) -> None:
         raise NackError(apdu.ack, apdu.data_class, apdu.data, raw)
 
 
+WIDE_CLASSES = frozenset(
+    {
+        DataClass.MEASURED_DATA_16,
+        DataClass.CONFIGURATION_PARAMETERS_16,
+        DataClass.REFERENCE_VALUES_16,
+    }
+)
+"""Classes whose GET replies carry two bytes per ID (an ALPHA2 GO answered class 11 so)."""
+
+
 def parse_get_reply(
-    apdu: Apdu, data_class: int, ids: Sequence[int], raw: bytes | None = None
+    apdu: Apdu,
+    data_class: int,
+    ids: Sequence[int],
+    raw: bytes | None = None,
+    *,
+    width: int | None = None,
 ) -> dict[int, int]:
-    """Map each requested ID to its one-byte value."""
+    """Map each requested ID to its big-endian value of ``width`` bytes.
+
+    ``width`` defaults to 2 for classes 11-13 and 1 for the others. The "not available" value
+    (255 for one byte) is returned as is: whether it is legal depends on the item's INFO.
+    """
     _check(apdu, data_class, raw)
-    if len(apdu.data) != len(ids):
-        raise ProtocolError(f"asked for {len(ids)} values, pump sent {len(apdu.data)}", raw)
-    return dict(zip(ids, apdu.data, strict=True))
+    size = width or (2 if data_class in WIDE_CLASSES else 1)
+    if len(apdu.data) != len(ids) * size:
+        raise ProtocolError(
+            f"asked for {len(ids)} values of {size} byte(s), pump sent {len(apdu.data)} bytes", raw
+        )
+    return {
+        item_id: int.from_bytes(apdu.data[i * size : (i + 1) * size], "big")
+        for i, item_id in enumerate(ids)
+    }
 
 
 def parse_command_reply(apdu: Apdu, raw: bytes | None = None) -> None:
@@ -117,11 +142,19 @@ class InfoField:
         return UNIT_TABLE.get(self.unit_index & 0x7F)
 
     def scale(self, value: int) -> float | None:
-        """Apply 8-bit standard scaling to ``value``; None when not available."""
+        """Apply 8-bit standard scaling to ``value``; None when not available.
+
+        Raises :class:`NotImplementedError` for extended-precision items and for units outside
+        the table, rather than returning a value scaled wrongly.
+        """
         if value == VALUE_NOT_AVAILABLE and not self.value_255_legal:
             return None
-        if self.scale_info != ScaleInfo.SCALED or self.unit is None:
+        if self.scale_info == ScaleInfo.EXTENDED:
+            raise NotImplementedError("extended-precision INFO scaling is not supported")
+        if self.scale_info != ScaleInfo.SCALED:
             return float(value)
+        if self.unit is None:
+            raise NotImplementedError(f"unit index {self.unit_index} is not in the unit table")
         zero = -(self.zero or 0) if self.zero_negative else (self.zero or 0)
         return (zero + value * (self.range or 0) / 254) * self.unit[1]
 

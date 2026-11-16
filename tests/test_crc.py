@@ -6,18 +6,18 @@ from grundfos_ble.genibus.crc import crc16, verify_crc
 from grundfos_ble.testing import Exchange
 
 from .conftest import (
+    CONSTRUCTED_SET_ACK_FAILED,
+    CONSTRUCTED_SET_ACK_OK,
+    CONSTRUCTED_START,
+    CONSTRUCTED_STOP,
     GO_SET_AUTONIGHT_ON,
     GO_SET_CONTROL_MODE_14,
     GO_SET_CP_SETPOINT_2_5M,
     GO_SET_MAX_LIMITER_3_0,
-    GO_START,
-    GO_STOP,
     HWR_NO_ALARM_REPLY,
     HWR_STRING_REPLY,
     REQ_MOTOR_STATE,
     REQ_PROCESS_VALUES,
-    SET_ACK_FAILED,
-    SET_ACK_OK,
 )
 
 
@@ -30,10 +30,10 @@ from .conftest import (
         GO_SET_CP_SETPOINT_2_5M,
         GO_SET_AUTONIGHT_ON,
         GO_SET_MAX_LIMITER_3_0,
-        GO_START,
-        GO_STOP,
-        SET_ACK_OK,
-        SET_ACK_FAILED,
+        CONSTRUCTED_START,
+        CONSTRUCTED_STOP,
+        CONSTRUCTED_SET_ACK_OK,
+        CONSTRUCTED_SET_ACK_FAILED,
         HWR_STRING_REPLY,
         HWR_NO_ALARM_REPLY,
     ],

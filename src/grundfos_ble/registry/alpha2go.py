@@ -17,8 +17,15 @@ from grundfos_ble.registry.base import Access, Field, Kind, ObjectSpec, Profile,
 FAMILY = 52
 TYPE = 6
 
-PA_PER_METRE = 9806.65
-"""Head conversion. The GO app uses 9804; the 0.03 % difference is below display resolution."""
+PA_PER_METRE = 9804.0
+"""Pa per metre of head, the pump's own factor (measured).
+
+An ALPHA2 GO's process values carry both: 4589.0498 Pa against 0.46808 m gives 9804.0001
+(measured 2026-11-09). Its factory presets are 9804 × 2.5, 5.0, 7.5 and 8.0 Pa. The GO app
+writes head setpoints with 1e5 / 10.2 (9803.92) instead; both round to the same centimetre.
+Not g × 1000 (9806.65), which read the CP III preset as 7.498 m and would put 8.5 m above
+the pump's 83334 Pa maximum.
+"""
 SECONDS_PER_HOUR = 3600.0
 
 # --- Enumerations ------------------------------------------------------------------------------
@@ -136,7 +143,7 @@ class PanelSetting(IntEnum):
 class Command(IntEnum):
     """Class-3 command IDs."""
 
-    RESET_ALARM = 2  # documented for SCALA1, untested on the ALPHA2 GO
+    RESET_ALARM = 2  # reported working on one SCALA1 (unreplicated); untested on the ALPHA2 GO
     STOP = 5
     START = 6
     REMOTE = 7
@@ -175,7 +182,8 @@ class IdentityId(IntEnum):
 class ErrorCode(IntEnum):
     """GENIbus error codes (alarms and warnings). Names from the GENI ErrorCode enum.
 
-    The ALPHA2 GO manual lists 51, 40, 4, 72, 76, 85, 132, 57, 25, 43 and 35.
+    The ALPHA2 GO manual lists 51, 40, 4, 72, 76, 85, 132, 57, 25, 43 and 35. Code 4 is
+    ``OVERVOLTAGE`` as that manual says; gofree and alpha-hwr name it ``MaxNumberOfRestarts``.
     """
 
     OK = 0
@@ -313,7 +321,12 @@ MOTOR_STATE = ObjectSpec(
         ),
         Field("power_w", 12, Kind.F32, "W", Verified.MEASURED),
         Field(
-            "shaft_power_w", 16, Kind.F32, "W", Verified.UNKNOWN, "'motor power, not sure' (ALPHA3)"
+            "dc_power_w",
+            16,
+            Kind.F32,
+            "W",
+            Verified.UNKNOWN,
+            "probably the DC power the GO app shows; 'motor power, not sure' (ALPHA3)",
         ),
         Field("speed_rpm", 20, Kind.F32, "rpm", Verified.MEASURED),
         Field("unknown_24", 24, Kind.F32, None, Verified.UNKNOWN, "NaN when measured"),
@@ -436,19 +449,16 @@ USER_SETPOINTS: dict[ControlMode, ObjectSpec] = {
     ControlMode.PROPORTIONAL_PRESSURE: _user(
         "setpoint_proportional_pressure", 18, "proportional pressure (Pa)"
     ),
-    ControlMode.PP_AUTOADAPT: _user(
-        "setpoint_pp_autoadapt", 20, "PP AUTOADAPT (Pa)", Verified.UNKNOWN
-    ),
-    ControlMode.CP_AUTOADAPT: _user(
-        "setpoint_cp_autoadapt", 22, "CP AUTOADAPT (Pa)", Verified.UNKNOWN
-    ),
     ControlMode.CONSTANT_FLOW: _user("setpoint_constant_flow", 40, "constant flow (m³/s)"),
 }
+"""The AUTOADAPT modes have no user setpoint: the GO app selects them with the control mode
+alone and writes their factory-limits object (86/19, 86/21) back unchanged."""
 
 PANEL_SETTING = ObjectSpec(
     key="panel_setting",
     ref=ObjectRef(86, 350),
     type=TYPE_PANEL_SETTING,
+    version=1,
     min_size=1,
     description="Setting selected on the panel (not updated by app or bus changes)",
     verified=Verified.ANSWERED,
@@ -484,6 +494,7 @@ MAX_FLOW_LIMITER = ObjectSpec(
     type=TYPE_FLOW_LIMITER,
     version=1,
     min_size=18,
+    leading=b"\x01",
     description="Maximum flow limiter (FLOWLIMIT)",
     access=Access.READ_WRITE,
     verified=Verified.ANSWERED,
@@ -496,6 +507,7 @@ MIN_FLOW_LIMITER = ObjectSpec(
     type=TYPE_FLOW_LIMITER,
     version=1,
     min_size=18,
+    leading=b"\x02",
     description="Minimum flow limiter",
     access=Access.READ_WRITE,
     verified=Verified.ANSWERED,
@@ -561,6 +573,7 @@ ALARMS = ObjectSpec(
     key="alarms",
     ref=ObjectRef(88, 0),
     type=TYPE_FAULT_ARRAY,
+    version=1,
     description="Active alarm codes (uint16 array, 0-terminated)",
     verified=Verified.ANSWERED,
     source=f"{_H}; SCALA1 community thread",
@@ -569,6 +582,7 @@ WARNINGS = ObjectSpec(
     key="warnings",
     ref=ObjectRef(88, 11),
     type=TYPE_FAULT_ARRAY,
+    version=1,
     description="Active warning codes (uint16 array, 0-terminated)",
     verified=Verified.ANSWERED,
     source=f"{_H}; SCALA1 community thread",
@@ -605,7 +619,14 @@ TEMPERATURES = ObjectSpec(
     verified=Verified.ANSWERED,
     source=_H,
     fields=(
-        Field("media_c", 0, Kind.F32, "°C", Verified.ANSWERED),
+        Field(
+            "media_c",
+            0,
+            Kind.F32,
+            "°C",
+            Verified.ANSWERED,
+            "an ALPHA3 reports 0 for about a minute after power-up; possibly this pump too",
+        ),
         Field("pcb_c", 4, Kind.F32, "°C", Verified.ANSWERED),
         Field("ambient_c", 8, Kind.F32, "°C", Verified.ANSWERED),
     ),
@@ -615,6 +636,7 @@ ENERGY = ObjectSpec(
     key="energy",
     ref=ObjectRef(87, 1),
     type=TYPE_ENERGY,
+    version=1,
     min_size=8,
     description="Lifetime energy (float64 joules)",
     verified=Verified.ANSWERED,
@@ -683,6 +705,21 @@ def setpoint_unit(mode: int) -> str | None:
         return "rpm"
     if mode in FLOW_MODES:
         return "m³/s"
+    return None
+
+
+def setpoint_wire(mode: int, value: float) -> float | None:
+    """Convert a display setpoint (m, rpm or m³/h) to wire units; None for an unknown mode.
+
+    Head uses :data:`PA_PER_METRE`, the pump's own factor, not the GO app's 1e5 / 10.2.
+    """
+    unit = setpoint_unit(mode)
+    if unit == "Pa":
+        return value * PA_PER_METRE
+    if unit == "rpm":
+        return value
+    if unit == "m³/s":
+        return value / SECONDS_PER_HOUR
     return None
 
 
