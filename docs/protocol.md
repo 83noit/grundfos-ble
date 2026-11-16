@@ -1,14 +1,21 @@
 # GENIbus over Bluetooth LE, as spoken by the Grundfos ALPHA2 GO
 
-What this library implements and how sure we are of each part. "Measured" means read from
-a real ALPHA2 GO by this project and checked against the pump's display or a clock. "Answered"
-means a real ALPHA2 GO returned plausible values with nothing to check them against. "Captured" means
-seen in Grundfos GO app traffic recorded on an ALPHA2 GO 25-90 by the esphome-alpha2go
-author (facts only; that project is GPL and none of its code is used here). "Documented"
-means described for a related pump (ALPHA HWR = family 52 type 7, ALPHA3, SCALA1) and not yet
-confirmed on an ALPHA2 GO. The objects the library reads or writes are defined, with the same
-tags, in `grundfos_ble/registry/alpha2go.py`. The QH coefficients (93/180–184, 93/200) and the
-clock (94/101) are listed here for reference and are not in the registry.
+What this library speaks, and how sure we are of each part. The tables tag every item with
+where it comes from:
+
+- **measured**: this project read it from a real ALPHA2 GO and checked it against the pump's
+  display or a clock.
+- **answered**: a real ALPHA2 GO gave a sensible-looking value, but there was nothing to check
+  it against.
+- **captured**: seen in Grundfos GO app traffic that the esphome-alpha2go author recorded on an
+  ALPHA2 GO 25-90. Only the facts are taken: that project is GPL, and none of its code is used
+  here.
+- **documented**: described for a related pump (ALPHA HWR = family 52 type 7, ALPHA3, SCALA1),
+  but not yet seen on an ALPHA2 GO.
+
+The objects the library reads or writes are defined, with the same tags, in
+`grundfos_ble/registry/alpha2go.py`. The QH coefficients (93/180–184, 93/200) and the clock
+(94/101) are listed here for reference only; they aren't in the registry.
 
 ## Transport
 
@@ -21,8 +28,8 @@ clock (94/101) are listed here for reference and are not in the registry.
 | Write size | ≤ 20 bytes per write, whatever the MTU | captured, documented |
 | Reply size | ≤ 20 bytes per notification; reassemble to LEN + 4 | measured |
 | Encryption | mandatory; unencrypted link dropped ~2 s after connect; SMP accepted ~3 s after the button; at least two bonds coexist (proxy and phone) | measured |
-| While a client is connected | the pump stops advertising; the last advert seen had flag 0x08 | measured |
-| Advertising interval | ~8 s, continuous | measured |
+| While a client is connected | the pump stops advertising (none for 97.6 s while the GO app was connected); 0x01 seen only as a client disconnected | measured |
+| Advertising interval | continuous; how often you hear it depends on the receiver: several times a second on a Mac, about every 8 s through Home Assistant | measured |
 
 ## Telegram
 
@@ -37,8 +44,8 @@ SD  LEN  DA  SA  APDU…  CRC-hi CRC-lo
 - APDU: `class`, `(op << 6) | len`, data (≤ 63 bytes). Request op: 0 GET, 2 SET, 3 INFO.
   Reply ack: 0 OK, 1 class unknown, 2 ID unknown, 3 illegal operation.
 
-Source: GENIbus Protocol Specification (Grundfos, 2005) for everything in this section;
-measured on the ALPHA2 GO.
+Everything in this section comes from the GENIbus Protocol Specification (Grundfos, 2005),
+and has been measured on the ALPHA2 GO.
 
 ## Classic classes
 
@@ -52,11 +59,15 @@ measured on the ALPHA2 GO.
 
 ## Class-10 data objects
 
-GET: `0A 03 id sub-hi sub-lo` (several refs may be concatenated). Reply data per object:
-`status type(2) version size(3) data(size)`. Replies name the **type**, not the id asked, so
-replies are matched by order. SET: `0A (0x80|len) id sub type(2) version size(3) data`;
-reply `0A 01 status` (0 OK, 2 busy, 4 failed). Floats are big-endian IEEE-754;
-`7F FF FF FF` = not available (and "keep the stored value" in SETs), `FF C0 00 00` = NaN.
+GET is `0A 03 id sub-hi sub-lo`, and you can chain several of those in one request. Each
+object in the reply comes as `status type(2) version size(3) data(size)`. The reply names the
+object's **type**, not the id you asked for, so replies are matched up by their order.
+
+SET is `0A (0x80|len) id sub type(2) version size(3) data`, and the pump answers
+`0A 01 status` (0 OK, 2 busy, 4 failed).
+
+Floats are big-endian IEEE-754. `7F FF FF FF` means "not available" (and, in a SET, "keep what's
+stored"), and `FF C0 00 00` is NaN.
 
 | Object | Type | Layout | Status |
 |---|---|---|---|
@@ -79,8 +90,9 @@ reply `0A 01 status` (0 OK, 2 busy, 4 failed). Floats are big-endian IEEE-754;
 | 87/1 energy | 232 v1, 26 B | float64 joules @0; f32 @8, u16 @12, f32 @14, repeated float64 @18 unconfirmed | answered on the ALPHA2 GO |
 | 94/101 clock | 322, 12 B | local wall clock | documented (HWR), not implemented |
 
-Error codes follow the GENI ErrorCode enum (`registry/alpha2go.py::ErrorCode`); the ALPHA2 GO
-manual's table maps panel codes E1 → 51, E2 → 40, E3 → 4/72/76/85/132, E4 → 57, E9 → 25.
+Error codes follow the GENI ErrorCode enum (`registry/alpha2go.py::ErrorCode`). The ALPHA2 GO
+manual's table maps the codes on the pump's display like this: E1 → 51, E2 → 40,
+E3 → 4/72/76/85/132, E4 → 57, E9 → 25.
 
 ## Measured values (one ALPHA2 GO)
 
@@ -89,14 +101,18 @@ manual's table maps panel codes E1 → 51, E2 → 40, E3 → 4/72/76/85/132, E4 
 | 2026-11-07 | 1.427 m³/h | 0.148 m | 235.2 V | 332.7 V | 0.038 A | 4.01 W | 1640 rpm | 44 °C |
 | 2026-11-09 | 0.995 m³/h | 0.434 m | 230.6 V | 324.0 V | 0.038 A | 4.01 W | 1658 rpm | 39 °C |
 
-The panel showed 1.4 m³/h, 0.1 m, 4 W and 1640 rpm on 2026-11-07. Frames are in
+On 2026-11-07 the pump's display showed 1.4 m³/h, 0.1 m, 4 W and 1640 rpm. The frames are in
 `src/grundfos_ble/testdata/alpha2go/`.
 
 ## Open questions
 
-- Meaning of 93/290 @8, @12 and @32, and of 87/69 @16, @24, @28 on the ALPHA2 GO.
-- Which sensor 87/69 @32 reads: it differs from the PCB temperature in 93/300 (42 °C against 37 °C).
-- How the alarm objects look with a fault active.
-- Whether the alarm/warning/connected advert flag bits behave on the ALPHA2 GO as on the SCALA1.
-- How a pump behaves after losing a bond, which has never been observed.
-- SMP details (Just Works assumed; IO capability none works through ESPHome proxies).
+- What 93/290 @8, @12 and @32, and 87/69 @16, @24 and @28 mean on the ALPHA2 GO.
+- Which sensor 87/69 @32 reads: it doesn't match the PCB temperature in 93/300 (42 °C against
+  37 °C).
+- What the alarm objects look like while a fault is active.
+- Whether the alarm and warning advert flags work on the ALPHA2 GO as they do on the SCALA1.
+  The "client connected" flag (0x01) is no use for spotting another client: the pump stops
+  advertising while one is connected, and 0x01 has only turned up as a client disconnected.
+- What a pump does after losing a bond. Nobody has seen that happen yet.
+- The pairing (SMP) details. We assume Just Works (no code to type), and "no input, no output"
+  works through ESPHome proxies.
