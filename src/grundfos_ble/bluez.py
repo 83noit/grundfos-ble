@@ -8,16 +8,19 @@ is why pairing from it works. While the pump is being paired, this module regist
 ``NoInputNoOutput`` agent as the default, accepts requests for that pump and rejects the rest.
 It can also remove BlueZ's half of a bond the pump no longer honours, so pairing runs again.
 
-Adapted from alpha-hwr's ``src/alpha_hwr/core/pairing_agent.py`` (MIT, Copyright (c) 2026
-Emmanuel Levijarvi, https://github.com/eman/alpha-hwr); its notice is in THIRD_PARTY_NOTICES.md.
+The agent and its one-at-a-time lock are adapted from alpha-hwr's
+``src/alpha_hwr/core/pairing_agent.py`` (MIT, Copyright (c) 2026 Emmanuel Levijarvi,
+https://github.com/eman/alpha-hwr); its notice is in THIRD_PARTY_NOTICES.md.
 
 This module does not use ``from __future__ import annotations``: dbus_fast's ``@method()``
 reads the D-Bus signature from the annotations when the class is defined.
 """
 
+import asyncio
 import contextlib
 import logging
 import sys
+import weakref
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any, Final
 
@@ -33,9 +36,23 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 AGENT_PATH: Final = "/org/grundfos_ble/agent"
+"""Prefix of the agent's object path; each device gets its own path below it."""
 BLUEZ_SERVICE: Final = "org.bluez"
 AGENT_MANAGER_INTERFACE: Final = "org.bluez.AgentManager1"
 ADAPTER_INTERFACE: Final = "org.bluez.Adapter1"
+
+_agent_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = (
+    weakref.WeakKeyDictionary()
+)
+"""One agent at a time, as BlueZ has a single default agent for the whole system. One lock per
+event loop: an ``asyncio.Lock`` binds to the loop it is first contended on."""
+
+
+def _agent_lock() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    if (lock := _agent_locks.get(loop)) is None:
+        lock = _agent_locks[loop] = asyncio.Lock()
+    return lock
 
 
 def bluez_device_path(device: "BLEDevice") -> str | None:
@@ -111,20 +128,34 @@ async def remove_bluez_bond(device: "BLEDevice") -> bool:
     return True
 
 
+def _agent_path(device_path: str) -> str:
+    """Return the agent's object path for one device: ``/org/grundfos_ble/agent/dev_AA_…``."""
+    return f"{AGENT_PATH}/{device_path.rsplit('/', 1)[-1]}"
+
+
 @contextlib.asynccontextmanager
-async def bluez_pairing_agent(device: "BLEDevice") -> AsyncGenerator[None]:
+async def bluez_pairing_agent(device: "BLEDevice", *, enabled: bool = True) -> AsyncGenerator[None]:
     """Hold a Just Works agent while ``device`` is connected and paired through BlueZ.
 
-    Does nothing when the device was not seen by a local BlueZ adapter (an ESPHome proxy, or
+    Does nothing when ``enabled`` is False (no new bond is expected, so pairing must not be
+    accepted), when the device was not seen by a local BlueZ adapter (an ESPHome proxy, or
     another platform), when BlueZ already holds a bond, or when the agent cannot be
-    registered; pairing then goes ahead as it would have without one.
+    registered; pairing then goes ahead as it would have without one. While registered, the
+    agent is the system's default and refuses every other device, so only one is held at a
+    time.
     """
-    path = bluez_device_path(device)
+    path = bluez_device_path(device) if enabled else None
     bluez = None if path is None else await _bluez_bus()
     if path is None or bluez is None or bluez[0].is_paired(path):
         yield
         return
-    bus = bluez[1]
+    async with _agent_lock(), _registered_agent(bluez[1], path):
+        yield
+
+
+@contextlib.asynccontextmanager
+async def _registered_agent(bus: "MessageBus", path: str) -> AsyncGenerator[None]:
+    agent_path = _agent_path(path)
     from dbus_fast.annotations import DBusObjectPath, DBusStr, DBusUInt32
     from dbus_fast.errors import DBusError
     from dbus_fast.service import ServiceInterface, method
@@ -167,11 +198,11 @@ async def bluez_pairing_agent(device: "BLEDevice") -> AsyncGenerator[None]:
 
     exported = registered = False
     try:
-        bus.export(AGENT_PATH, Agent())
+        bus.export(agent_path, Agent())
         exported = True
-        await call("RegisterAgent", "os", [AGENT_PATH, "NoInputNoOutput"])
+        await call("RegisterAgent", "os", [agent_path, "NoInputNoOutput"])
         registered = True
-        await call("RequestDefaultAgent", "o", [AGENT_PATH])
+        await call("RequestDefaultAgent", "o", [agent_path])
     except Exception as err:  # try the pairing anyway
         _LOGGER.debug("Could not register the BlueZ pairing agent: %s", err)
     else:
@@ -181,6 +212,6 @@ async def bluez_pairing_agent(device: "BLEDevice") -> AsyncGenerator[None]:
     finally:
         if registered:
             with contextlib.suppress(Exception):
-                await call("UnregisterAgent", "o", [AGENT_PATH])
+                await call("UnregisterAgent", "o", [agent_path])
         if exported:
-            bus.unexport(AGENT_PATH)
+            bus.unexport(agent_path)

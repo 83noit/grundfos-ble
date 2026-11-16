@@ -41,6 +41,25 @@ class ObjectError(ProtocolError):
         self.status = status
 
 
+class ObjectVersionError(ProtocolError):
+    """A class-10 object came back with a version this library has no layout for.
+
+    Raised per object: other objects on the same link are unaffected. ``raw`` holds the frame
+    so the new layout can be worked out from it.
+    """
+
+    def __init__(
+        self, object_type: int, expected: int, received: int, raw: bytes | None = None
+    ) -> None:
+        super().__init__(
+            f"object type {object_type} came back as version {received}, expected {expected}",
+            raw,
+        )
+        self.object_type = object_type
+        self.expected = expected
+        self.received = received
+
+
 class NotSupported(GrundfosError):
     """The pump does not expose this data item or command, or this release does not support it."""
 
@@ -54,6 +73,15 @@ class GrundfosConnectionError(GrundfosError):
     def __init__(self, message: str, error_code: int | None = None) -> None:
         super().__init__(message)
         self.error_code = error_code
+
+
+class PairingUnsupported(GrundfosConnectionError):
+    """The Bluetooth path cannot pair at all, so it can never reach the pump.
+
+    Raised when an ESPHome proxy's firmware has no pairing support (bleak-esphome's "Pairing
+    is not available in this version ESPHome"). The pump answers only an encrypted link, so
+    the proxy's ESPHome has to be updated; pressing the pump's button cannot help.
+    """
 
 
 class PairingRequired(GrundfosConnectionError):

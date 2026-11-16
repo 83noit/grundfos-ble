@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from types import SimpleNamespace
 from typing import Any
@@ -71,7 +72,7 @@ async def test_agent_is_registered_while_pairing() -> None:
     with _manager(FakeManager(bus)):
         async with bluez.bluez_pairing_agent(_bluez_device()):
             assert bus.calls == ["RegisterAgent", "RequestDefaultAgent"]
-            agent = bus.exported[bluez.AGENT_PATH]
+            agent = bus.exported[f"{bluez.AGENT_PATH}/dev_AA_BB_CC_DD_EE_FF"]
         assert bus.calls[-1] == "UnregisterAgent"
         assert not bus.exported
 
@@ -103,6 +104,33 @@ async def test_agent_is_skipped(device: BLEDevice, manager: FakeManager) -> None
         async with bluez.bluez_pairing_agent(device):
             pass
     assert manager._bus is None or not manager._bus.calls
+
+
+async def test_agent_is_skipped_when_no_new_bond_is_expected() -> None:
+    bus = FakeBus()
+    with _manager(FakeManager(bus)):
+        async with bluez.bluez_pairing_agent(_bluez_device(), enabled=False):
+            pass
+    assert not bus.calls
+
+
+async def test_agents_are_held_one_at_a_time() -> None:
+    bus = FakeBus()
+    other = BLEDevice(
+        "11:22:33:44:55:66", "Other pump", {"path": "/org/bluez/hci0/dev_11_22_33_44_55_66"}
+    )
+    order: list[str] = []
+
+    async def hold(device: BLEDevice, name: str) -> None:
+        async with bluez.bluez_pairing_agent(device):
+            order.append(f"{name} in")
+            await asyncio.sleep(0)
+            order.append(f"{name} out")
+
+    with _manager(FakeManager(bus)):
+        await asyncio.gather(hold(_bluez_device(), "a"), hold(other, "b"))
+    assert order == ["a in", "a out", "b in", "b out"]
+    assert not bus.exported
 
 
 async def test_agent_is_skipped_when_bleak_renames_its_bus() -> None:
@@ -143,9 +171,24 @@ async def test_transport_holds_the_agent_and_reports_a_refusal() -> None:
         patch.object(transport_module, "establish_connection", establish),
         pytest.raises(PairingRequired),
     ):
-        await BleTransport(_bluez_device(), max_attempts=1).connect()
+        await BleTransport(_bluez_device(), max_attempts=1, pairing=True).connect()
     assert seen == ["RegisterAgent", "RequestDefaultAgent"]
     assert bus.calls[-1] == "UnregisterAgent"
+
+
+async def test_transport_polls_without_the_agent() -> None:
+    bus = FakeBus()
+
+    async def establish(*_args: Any, **_kwargs: Any) -> Any:
+        raise BleakError("[org.bluez.Error.AuthenticationFailed] Authentication Failed")
+
+    with (
+        _manager(FakeManager(bus)),
+        patch.object(transport_module, "establish_connection", establish),
+        pytest.raises(PairingRequired),
+    ):
+        await BleTransport(_bluez_device(), max_attempts=1).connect()
+    assert not bus.calls
 
 
 async def test_bond_is_removed_from_the_adapter() -> None:
