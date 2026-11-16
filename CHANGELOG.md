@@ -7,6 +7,8 @@ change defaults; a patch release only fixes bugs.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-16
+
 ### Changed
 
 - The Bluetooth link now comes from [ble-bond](https://github.com/83noit/ble-bond) 1.x, which
@@ -165,7 +167,8 @@ change defaults; a patch release only fixes bugs.
 - `grundfos_ble.testing`: a replay transport, a fixture format for recorded frames, and the
   recorded ALPHA2 GO frames as `FIXTURES`.
 
-[Unreleased]: https://github.com/83noit/grundfos-ble/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/83noit/grundfos-ble/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/83noit/grundfos-ble/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/83noit/grundfos-ble/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/83noit/grundfos-ble/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/83noit/grundfos-ble/compare/v0.1.1...v0.1.2
