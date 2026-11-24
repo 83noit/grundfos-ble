@@ -7,6 +7,10 @@ the API or change defaults; a patch release only fixes bugs.
 
 ## [Unreleased]
 
+## [0.5.0b1] - 2026-11-24
+
+Beta, so Home Assistant can record a pump this library doesn't support yet.
+
 ### Added
 
 - `grundfos_ble.capture`: `Recorder`, `record_capture()` and `Capture`, which read the identity,
@@ -204,7 +208,8 @@ the API or change defaults; a patch release only fixes bugs.
 - `grundfos_ble.testing`: a replay transport, a file format for recorded frames, and the
   recorded ALPHA2 GO frames as `FIXTURES`.
 
-[Unreleased]: https://github.com/83noit/grundfos-ble/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/83noit/grundfos-ble/compare/v0.5.0b1...HEAD
+[0.5.0b1]: https://github.com/83noit/grundfos-ble/compare/v0.4.0...v0.5.0b1
 [0.4.0]: https://github.com/83noit/grundfos-ble/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/83noit/grundfos-ble/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/83noit/grundfos-ble/compare/v0.1.3...v0.2.0
