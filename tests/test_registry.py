@@ -10,8 +10,23 @@ from grundfos_ble.registry.base import Kind, ObjectSpec, Verified
 
 def test_profile_lookup() -> None:
     assert alpha2go.profile_for(52, 6) is alpha2go.ALPHA2_GO
-    assert alpha2go.profile_for(52, 7) is None
+    assert alpha2go.profile_for(52, 7) is alpha2go.ALPHA_HWR
+    assert alpha2go.profile_for(52, 8) is None
+    assert alpha2go.profile_for(57, 7) is None
     assert alpha2go.ALPHA2_GO.matches(52, 6)
+    assert not alpha2go.ALPHA2_GO.matches(52, 7)
+
+
+def test_alpha_hwr_reads_the_alpha2_go_objects() -> None:
+    # alpha-hwr's bench notes measured the same object types and versions on family 52 type 7.
+    assert alpha2go.ALPHA_HWR.objects is alpha2go.ALPHA2_GO.objects
+    assert alpha2go.ALPHA_HWR.name == "ALPHA HWR"
+
+
+def test_temperature_range_mode_has_no_setpoint_unit() -> None:
+    # The HWR's own mode keeps its range in an object this library does not read.
+    assert alpha2go.ControlMode(27) is alpha2go.ControlMode.TEMPERATURE_RANGE
+    assert alpha2go.setpoint_unit(alpha2go.ControlMode.TEMPERATURE_RANGE) is None
 
 
 @pytest.mark.parametrize("spec", alpha2go.ALPHA2_GO.objects.values(), ids=lambda s: s.key)

@@ -7,6 +7,20 @@ the API or change defaults; a patch release only fixes bugs.
 
 ## [Unreleased]
 
+### Added
+
+- The ALPHA HWR (family 52, type 7) is recognised, as `ALPHA_HWR`. It reads the same objects as
+  the ALPHA2 GO: [alpha-hwr](https://github.com/eman/alpha-hwr)'s notes from a real ALPHA HWR
+  give the same object types and versions, and a recording from an ALPHA 15-58F matches the
+  Grundfos GO app's readings. The recording ships in `testdata/alpha_hwr`.
+- `ControlMode` gains the GENIbus modes it was missing (17 to 24, 27 and 28), including the
+  ALPHA HWR's temperature-range mode, 27. Its setpoint isn't read yet.
+
+### Fixed
+
+- The electronics temperature is reported as not available, not 0 °C, when the pump leaves it
+  at zero bytes, as the ALPHA HWR does.
+
 ## [0.5.0b1] - 2026-11-24
 
 Beta, so Home Assistant can record a pump this library doesn't support yet.

@@ -45,6 +45,7 @@ from grundfos_ble.pump import (
 )
 from grundfos_ble.registry.alpha2go import (
     ALPHA2_GO,
+    ALPHA_HWR,
     Command,
     ControlMode,
     ControlSource,
@@ -63,6 +64,7 @@ __version__ = "0.5.0b1"
 
 __all__ = [
     "ALPHA2_GO",
+    "ALPHA_HWR",
     "GENI_CHARACTERISTIC_UUID",
     "GRUNDFOS_SERVICE_UUID",
     "GRUNDFOS_SERVICE_UUID_16",

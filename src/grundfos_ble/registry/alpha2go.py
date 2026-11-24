@@ -16,6 +16,8 @@ from grundfos_ble.registry.base import Access, Field, Kind, ObjectSpec, Profile,
 
 FAMILY = 52
 TYPE = 6
+TYPE_ALPHA_HWR = 7
+"""The ALPHA HWR shares the family; see :data:`ALPHA_HWR`."""
 
 PA_PER_METRE = 9804.0
 """Pa per metre of head, the pump's own factor (measured).
@@ -49,9 +51,18 @@ class ControlMode(IntEnum):
     CP_AUTOADAPT = 14  # AUTOADAPT underfloor
     AUTOADAPT_COMBINED = 15
     CONSTANT_DOSING = 16
+    DISINFECTANT = 17
+    FLOCCULENT = 18
+    PH = 19
     PID = 20
+    CONSTANT_RELATIVE_SETPOINT = 21
+    LEVEL = 22
+    ZONE_PUMP = 23
+    USER_DEFINED = 24
     DHW_ON_OFF = 25
     PROPORTIONAL_DIFFERENTIAL_PRESSURE = 26
+    TEMPERATURE_RANGE = 27  # the ALPHA HWR's own mode (alpha-hwr docs)
+    COMFORT_VALVE = 28
     ON_OFF = 29
     CONSTANT_VOLTAGE = 30
     AIR_VENTING = 128
@@ -337,7 +348,8 @@ MOTOR_STATE = ObjectSpec(
             Kind.F32,
             "°C",
             Verified.MEASURED,
-            "39–44 °C with ~20 °C water; which sensor is unconfirmed",
+            "39–44 °C with ~20 °C water; which sensor is unconfirmed. Zero bytes on an ALPHA HWR "
+            "(read as not available)",
         ),
     ),
 )
@@ -689,7 +701,22 @@ ALPHA2_GO = Profile(
     },
 )
 
-PROFILES: tuple[Profile, ...] = (ALPHA2_GO,)
+ALPHA_HWR = Profile(
+    name="ALPHA HWR",
+    family=FAMILY,
+    type=TYPE_ALPHA_HWR,
+    objects=ALPHA2_GO.objects,
+)
+"""The ALPHA HWR (family 52, type 7); an ALPHA 15-58F sold in Canada advertises this identity.
+
+It reuses the ALPHA2 GO objects, whose type and version alpha-hwr's bench notes measured on
+this pump (565 v2, 256 v3, 534 v2, 570 v1, 303 v1, 301 v1). A recording from an ALPHA 15-58F
+(``testdata/alpha_hwr``) matches the Grundfos GO app's readings, with the GO's head factor;
+it has no AutoNight and leaves the electronics temperature (87/69 @32) at zero bytes. Its own
+temperature-range mode (27) keeps its setpoint in an object this library does not read.
+"""
+
+PROFILES: tuple[Profile, ...] = (ALPHA2_GO, ALPHA_HWR)
 
 
 def profile_for(family: int, type_: int) -> Profile | None:

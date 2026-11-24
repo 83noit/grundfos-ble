@@ -1,0 +1,120 @@
+# Recorded from an ALPHA 15-58 165 GF 9H XT (ALPHA HWR identity, family 52 type 7) on 2026-11-24
+# with the grundfos-ble 0.4.0 command line from a Mac, by the reporter of ha-grundfos-ble#5.
+# One whole frame per '<' line. State: CP AUTOADAPT, no alarms. Eleven minutes later the GO
+# app showed 0.1 m3/h, 1.8 m, 5 W, 2871 rpm, 116 V, 30 C, 13.67 kWh, 5 starts.
+
+# identity 2/148-150
+> 27 07 e7 f8 02 03 94 95 96 eb 47
+< 24 07 f8 e7 02 03 34 07 00 a9 38
+
+# string 1 (product_name)
+> 27 05 e7 f8 07 01 01 52 38
+< 24 0a f8 e7 07 06 41 4c 50 48 41 00 82 0b
+
+# string 8 (product_number)
+> 27 05 e7 f8 07 01 08 c3 11
+< 24 0d f8 e7 07 09 39 32 36 30 33 31 31 35 00 61 61
+
+# string 17 (unit_name)
+> 27 05 e7 f8 07 01 11 40 09
+< 24 12 f8 e7 07 0e 47 72 75 6e 64 66 6f 73 20 70 75 6d 70 00 a9 7e
+
+# string 19 (model)
+> 27 05 e7 f8 07 01 13 60 4b
+< 24 1d f8 e7 07 19 41 4c 50 48 41 20 31 35 2d 35 38 20 31 36 35 20 47 46 20 39 48 20 58 54 00 7c fc
+
+# string 50 (software_version)
+> 27 05 e7 f8 07 01 32 54 08
+< 24 1c f8 e7 07 18 39 32 36 30 31 36 31 38 56 30 34 2e 30 32 2e 30 31 2e 30 32 35 33 39 00 79 2e
+
+# string 58 (ble_software_version)
+> 27 05 e7 f8 07 01 3a d5 00
+< 24 1c f8 e7 07 18 39 32 38 31 31 34 33 31 56 30 36 2e 30 30 2e 30 31 2e 30 30 30 30 31 00 3b 6a
+
+# measurements
+> 27 07 e7 f8 0a 03 5d 01 22 62 7c
+< 24 2f f8 e7 0a 2b 00 02 35 02 00 00 24 38 0d e6 fc 46 8a 66 73 7f ff ff ff 7f ff ff ff 7f ff ff ff 7f ff ff ff 3d f9 70 07 3f e7 49 c2 3e 94 6b 24 a8 5d
+
+# measurements
+> 27 07 e7 f8 0a 03 57 00 45 8a cd
+< 24 34 f8 e7 0a 30 00 01 00 03 00 00 29 42 e7 30 d6 43 23 7a 00 3d a3 03 33 40 b0 29 40 40 b2 a1 c0 45 32 d4 78 7f ff ff ff 7f ff ff ff 00 00 00 00 00 00 00 00 00 8c 22
+
+# operation
+> 27 07 e7 f8 0a 03 56 00 08 24 94
+< 24 12 f8 e7 0a 0e 00 01 2f 01 00 00 07 01 00 0e 46 8a b6 8d 4d d9
+
+# faults
+> 27 07 e7 f8 0a 03 58 00 00 be 9d
+< 24 0d f8 e7 0a 09 00 02 3a 01 00 00 02 00 00 dc 50
+
+# faults
+> 27 07 e7 f8 0a 03 58 00 0b 0f f6
+< 24 0d f8 e7 0a 09 00 02 3a 01 00 00 02 00 00 dc 50
+
+# autonight
+> 27 07 e7 f8 0a 03 5a 00 08 51 f5
+< 24 05 f8 e7 0a 01 04 ee 26
+
+# flow_limiters
+> 27 07 e7 f8 0a 03 56 02 58 18 03
+< 24 1d f8 e7 0a 19 00 03 7f 01 00 00 12 01 00 38 c6 76 f0 3f 19 99 9a 3f cc cc cd 3e cc cc cd 3c d3
+
+# flow_limiters
+> 27 07 e7 f8 0a 03 56 02 59 08 22
+< 24 1d f8 e7 0a 19 00 03 7f 01 00 00 12 02 00 38 84 4f 4b 3f 19 99 9a 3f cc cc cd 3e cc cc cd da c0
+
+# statistics
+> 27 07 e7 f8 0a 03 5d 00 01 45 4c
+< 24 27 f8 e7 0a 23 00 00 f8 02 00 00 1c 00 00 00 05 00 00 00 00 00 75 0f 6c 00 01 4d 0c 00 15 c3 54 00 00 00 06 00 75 0f 6c 3a dd
+
+# temperatures
+> 27 07 e7 f8 0a 03 5d 01 2c 83 b2
+< 24 18 f8 e7 0a 14 00 02 16 02 00 00 0d 41 f1 c6 51 42 17 27 b1 42 02 bc de 01 6b f1
+
+# energy_kwh
+> 27 07 e7 f8 0a 03 57 00 01 82 8d
+< 24 25 f8 e7 0a 21 00 00 e8 01 00 00 1a 41 87 77 96 1c 16 e9 00 40 b0 29 40 00 01 40 b0 29 40 41 87 77 96 1c 16 e9 00 5d 03
+
+# panel_setting
+> 27 07 e7 f8 0a 03 56 01 5e 2d 96
+< 24 0c f8 e7 0a 08 00 03 64 01 00 00 01 09 96 49
+
+# probe
+> 27 07 e7 f8 0a 03 56 00 08 24 94
+< 24 12 f8 e7 0a 0e 00 01 2f 01 00 00 07 01 00 0e 46 8a b6 8d 4d d9
+
+# probe
+> 27 07 e7 f8 0a 03 58 00 00 be 9d
+< 24 0d f8 e7 0a 09 00 02 3a 01 00 00 02 00 00 dc 50
+
+# probe
+> 27 07 e7 f8 0a 03 58 00 0b 0f f6
+< 24 0d f8 e7 0a 09 00 02 3a 01 00 00 02 00 00 dc 50
+
+# probe
+> 27 07 e7 f8 0a 03 5d 00 01 45 4c
+< 24 27 f8 e7 0a 23 00 00 f8 02 00 00 1c 00 00 00 05 00 00 00 00 00 75 0f 6d 00 01 4d 0d 00 15 c3 55 00 00 00 06 00 75 0f 6d 94 5e
+
+# probe
+> 27 07 e7 f8 0a 03 5d 01 2c 83 b2
+< 24 18 f8 e7 0a 14 00 02 16 02 00 00 0d 41 f1 c6 51 42 17 27 b1 42 02 bc de 01 6b f1
+
+# probe
+> 27 07 e7 f8 0a 03 57 00 01 82 8d
+< 24 25 f8 e7 0a 21 00 00 e8 01 00 00 1a 41 87 77 96 1c 16 e9 00 40 b0 29 40 00 01 40 b0 29 40 41 87 77 96 1c 16 e9 00 5d 03
+
+# probe
+> 27 07 e7 f8 0a 03 5a 00 08 51 f5
+< 24 05 f8 e7 0a 01 04 ee 26
+
+# probe
+> 27 07 e7 f8 0a 03 56 02 58 18 03
+< 24 1d f8 e7 0a 19 00 03 7f 01 00 00 12 01 00 38 c6 76 f0 3f 19 99 9a 3f cc cc cd 3e cc cc cd 3c d3
+
+# probe
+> 27 07 e7 f8 0a 03 56 02 59 08 22
+< 24 1d f8 e7 0a 19 00 03 7f 01 00 00 12 02 00 38 84 4f 4b 3f 19 99 9a 3f cc cc cd 3e cc cc cd da c0
+
+# probe
+> 27 07 e7 f8 0a 03 56 01 5e 2d 96
+< 24 0c f8 e7 0a 08 00 03 64 01 00 00 01 09 96 49

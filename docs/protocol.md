@@ -22,7 +22,7 @@ The objects the library reads or writes are defined, with the same tags, in
 | Item | Value | Status |
 |---|---|---|
 | Advertised service UUID | 0xFE5D (Bluetooth SIG member UUID of Grundfos A/S) | measured |
-| Service data | `03 01 00 fam type ver mode flags tail(2)`; `fam type` = 52 6 for the ALPHA2 GO | measured (flags per SCALA1 docs) |
+| Service data | `03 01 00 fam type ver mode flags tail(2)`; `fam type` = 52 6 for the ALPHA2 GO, 52 7 for the ALPHA HWR | measured (flags per SCALA1 docs) |
 | Flag bits | 0x10 button pressed (~4 s, pairing window), 0x01 client connected, 0x02 alarm, 0x04 warning, 0x08 LED blinking | 0x10 measured, rest documented |
 | GATT characteristic | `859cffd1-036e-432a-aa28-1a0085b87ba9`, write-without-response + notify | measured |
 | Write size | ≤ 20 bytes per write, whatever the MTU | captured, documented |

@@ -6,12 +6,13 @@
 [![License: MIT](https://img.shields.io/github/license/83noit/grundfos-ble)](https://github.com/83noit/grundfos-ble/blob/main/LICENSE)
 
 An async, typed Python library for Grundfos circulator pumps that talk **GENIbus over
-Bluetooth LE**. GENIbus is Grundfos's own protocol for reading and setting up its pumps. For
-now the only supported pump is the **ALPHA2 GO**.
+Bluetooth LE**. GENIbus is Grundfos's own protocol for reading and setting up its pumps. The
+supported pumps are the **ALPHA2 GO** and the **ALPHA HWR** (family 52, type 7, for example
+an ALPHA 15-58F).
 
 The message layer doesn't care how the bytes travel, and each pump's list of values is plain
-data. That should make related Grundfos Bluetooth pumps (ALPHA3, ALPHA HWR, SCALA1) easier to
-add later, but none of them works yet.
+data. That should make related Grundfos Bluetooth pumps (ALPHA3, SCALA1) easier to add later,
+but neither works yet.
 
 **This is an early, read-only release.** It reads what the pump is doing and its settings. It
 can't change anything on the pump yet.
@@ -208,7 +209,8 @@ Alpha, read-only. The process and motor values were checked against the display 
 GO. That pump also gave sensible-looking answers for the operation state, panel setting, flow
 limiters, AutoNight, alarms, warnings, statistics, temperatures and energy, with no fault
 active. The other objects come from recorded traffic or from documentation for related pumps.
-Nothing has been tried on other pump families.
+A recording from one ALPHA HWR (an ALPHA 15-58F) matches what the Grundfos GO app showed for
+it. Nothing has been tried on other pump families.
 
 ## Acknowledgements
 

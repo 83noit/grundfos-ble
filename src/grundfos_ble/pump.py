@@ -500,6 +500,13 @@ class GrundfosPump:
 # --- Decoders and encoders (pure functions, unit-tested against recorded frames) ----------------
 
 
+def _electronics_temperature(motor: bytes, value: float | int | bool | None) -> float | None:
+    """Return 87/69 @32, or None when the pump leaves it at zero bytes (the ALPHA HWR does)."""
+    if motor[32:36] == bytes(4):
+        return None
+    return _f(value)
+
+
 def _f(value: float | int | bool | None) -> float | None:
     return None if value is None else float(value)
 
@@ -605,7 +612,7 @@ def decode_measurements(process: bytes, motor: bytes) -> Measurements:
         power_w=_f(m["power_w"]),
         dc_power_w=_f(m["dc_power_w"]),
         speed_rpm=_f(m["speed_rpm"]),
-        electronics_temperature_c=_f(m["electronics_temperature_c"]),
+        electronics_temperature_c=_electronics_temperature(motor, m["electronics_temperature_c"]),
         raw_process_values=process,
         raw_motor_state=motor,
     )
