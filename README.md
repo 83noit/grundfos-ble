@@ -47,6 +47,9 @@ moving. The library has been tested on one ALPHA2 GO and comes with no warranty 
   warnings and, if the pump has them, statistics, temperatures and energy. There's no typed
   reader for the stored panel presets: fetch them with `GrundfosPump.get_object` and
   `registry.alpha2go.panel_preset`.
+- Records a session for a support request or a test fixture (`grundfos_ble.capture`): the
+  identity, every object it knows and the probe, with every frame, leaving out the serial
+  number, production code and the pump's name by default.
 - **Doesn't write yet.** The write methods (control mode, setpoint, limiters, AutoNight,
   start/stop, alarm reset) raise `NotSupported`. See Known limitations below.
 
@@ -110,6 +113,7 @@ writes to the pump, and none sends raw bytes you type in.
 $ grundfos-ble scan                      # pumps nearby, with their advertisement flags
 $ grundfos-ble scan --watch --seconds 300 # every change of a pump's advertisement
 $ grundfos-ble pair AA:BB:CC:DD:EE:FF    # waits for the Bluetooth button, then pairs
+$ grundfos-ble info AA:BB:CC:DD:EE:FF    # identity, model and software versions
 $ grundfos-ble read AA:BB:CC:DD:EE:FF --json
 $ grundfos-ble probe AA:BB:CC:DD:EE:FF   # which optional objects answer, and their versions
 $ grundfos-ble get AA:BB:CC:DD:EE:FF 88/25
@@ -176,15 +180,11 @@ need fixing:
 - `set_setpoint` writes the control mode first. If the second write then fails, the mode has
   already changed and the error doesn't tell you. The value read back is returned but not
   compared, and the pump quietly clamps what it gets.
-- Read-modify-write builds the object again instead of patching the raw bytes, and doesn't
-  refuse a different object version or size.
+- Read-modify-write builds the object again instead of patching the raw bytes.
 - Cancelling halfway through a write can leave part of a SET at the pump.
 
-Reads have limits too:
-
-- The object version isn't checked, so a firmware that changes a layout but keeps the same
-  type would decode into wrong values.
-- The advertisement parser only checks the length, not the `03 01 00` prefix.
+Reads have a limit too: the advertisement parser only checks the length, not the `03 01 00`
+prefix.
 
 ## Development
 
