@@ -19,7 +19,7 @@ import logging
 import sys
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import asdict, dataclass, field, is_dataclass
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -28,18 +28,21 @@ from bleak import BleakScanner
 from bleak.exc import BleakError
 
 from grundfos_ble.advertisement import GRUNDFOS_SERVICE_UUID, Advertisement, parse_advertisement
-from grundfos_ble.exceptions import GrundfosError, NotSupported
+from grundfos_ble.capture import (
+    Recorder,
+    read_all,
+    read_identity,
+    record_capture,
+)
+from grundfos_ble.exceptions import GrundfosError
 from grundfos_ble.genibus import objects
 from grundfos_ble.genibus.objects import ObjectRef
 from grundfos_ble.genibus.telegram import Telegram
-from grundfos_ble.pump import GrundfosPump, Identity
+from grundfos_ble.pump import GrundfosPump
 from grundfos_ble.registry import alpha2go
-from grundfos_ble.registry.alpha2go import StringId
-from grundfos_ble.transport import BleTransport, Transport
+from grundfos_ble.transport import BleTransport
 
 if TYPE_CHECKING:
-    from collections import deque
-
     from bleak.backends.device import BLEDevice
     from bleak.backends.scanner import AdvertisementData
 
@@ -49,18 +52,6 @@ BUTTON_WAIT_SECONDS = 60.0
 WATCH_SECONDS = 60.0
 EXIT_INTERRUPTED = 130
 
-PRIVATE_STRINGS = frozenset({StringId.SERIAL_NUMBER, StringId.PRODUCTION_CODE})
-"""Strings left out unless ``--include-serial`` is given, so output and fixtures can be shared."""
-IDENTITY_STRINGS = (
-    StringId.PRODUCT_NAME,
-    StringId.PRODUCT_NUMBER,
-    StringId.SERIAL_NUMBER,
-    StringId.PRODUCTION_CODE,
-    StringId.UNIT_NAME,
-    StringId.MODEL,
-    StringId.SOFTWARE_VERSION,
-    StringId.BLE_SOFTWARE_VERSION,
-)
 BOND_WARNING = (
     "Pairing makes a new bond on the pump. It has held at least two at once (a phone and a "
     "proxy), but its maximum is not documented and it offers no way to forget one, so pair "
@@ -68,94 +59,7 @@ BOND_WARNING = (
 )
 
 
-# --- Recording what goes over the link ----------------------------------------------------------
-
-
-@dataclass(slots=True)
-class Timing:
-    """One request: when it was sent, how long its answer took, and whether one came."""
-
-    label: str
-    request: bytes
-    seconds: float
-    answered: bool
-
-
-@dataclass(slots=True)
-class Recorder:
-    """A :class:`~grundfos_ble.transport.Transport` that times requests and keeps exchanges.
-
-    Wraps the real transport. ``label`` names what is being read, for the timing report and the
-    fixture's comments. It never writes: :meth:`send` refuses.
-    """
-
-    inner: Transport
-    label: str = ""
-    timings: list[Timing] = field(default_factory=list)
-    exchanges: list[tuple[str, bytes, bytes]] = field(default_factory=list)
-    last_frames: deque[tuple[str, bytes]] = field(init=False)
-    """The wrapped transport's recent traffic (the same deque)."""
-
-    def __post_init__(self) -> None:
-        self.last_frames = self.inner.last_frames
-
-    @property
-    def is_connected(self) -> bool:
-        """True while the wrapped transport's link is up."""
-        return self.inner.is_connected
-
-    @property
-    def reply_seen(self) -> bool:
-        """True once the pump has answered on the wrapped transport."""
-        return self.inner.reply_seen
-
-    async def connect(self) -> None:
-        """Connect the wrapped transport."""
-        await self.inner.connect()
-
-    async def disconnect(self) -> None:
-        """Disconnect the wrapped transport."""
-        await self.inner.disconnect()
-
-    async def request(
-        self,
-        telegram: Telegram,
-        *,
-        timeout: float | None = None,
-        expect: Callable[[Telegram], bool] | None = None,
-    ) -> Telegram:
-        """Send a request through the wrapped transport, timing it and keeping the exchange."""
-        frame = telegram.encode()
-        started = time.perf_counter()
-        answered = False
-        try:
-            reply = await self.inner.request(telegram, timeout=timeout, expect=expect)
-            answered = True
-        finally:
-            self.timings.append(Timing(self.label, frame, time.perf_counter() - started, answered))
-        if reply.raw is not None:
-            self.exchanges.append((self.label, frame, reply.raw))
-        return reply
-
-    async def send(self, telegram: Telegram) -> None:
-        """Refuse: the command line never writes to the pump."""
-        del telegram
-        raise NotSupported("the command line never writes to the pump")
-
-
 # --- Output helpers -----------------------------------------------------------------------------
-
-
-def _plain(value: Any) -> Any:  # noqa: ANN401 - any decoded value
-    if is_dataclass(value) and not isinstance(value, type):
-        return {k: _plain(v) for k, v in asdict(value).items()}
-    if isinstance(value, bytes):
-        return value.hex(" ")
-    if isinstance(value, dict):
-        return {str(k): _plain(v) for k, v in value.items()}
-    if isinstance(value, list | tuple | frozenset | set):
-        return [_plain(v) for v in value]
-    return value
 
 
 def _flags(advertisement: Advertisement) -> str:
@@ -193,58 +97,6 @@ def _measurement_line(pump_data: dict[str, Any]) -> str:
 
 
 # --- Reading ------------------------------------------------------------------------------------
-
-
-async def _identity(pump: GrundfosPump, recorder: Recorder, *, include_serial: bool) -> Identity:
-    recorder.label = "identity 2/148-150"
-    identity = await pump.read_identity(strings=False)
-    strings: dict[str, str | None] = {}
-    for string_id in IDENTITY_STRINGS:
-        if string_id in PRIVATE_STRINGS and not include_serial:
-            continue
-        recorder.label = f"string {int(string_id)} ({string_id.name.lower()})"
-        strings[string_id.name.lower()] = await pump.read_string(string_id)
-    return Identity(
-        family=identity.family,
-        type=identity.type,
-        version=identity.version,
-        product_name=strings.get("product_name"),
-        product_number=strings.get("product_number"),
-        serial_number=strings.get("serial_number"),
-        production_code=strings.get("production_code"),
-        unit_name=strings.get("unit_name"),
-        model=strings.get("model"),
-        software_version=strings.get("software_version"),
-        ble_software_version=strings.get("ble_software_version"),
-    )
-
-
-async def _read_all(pump: GrundfosPump, recorder: Recorder) -> dict[str, Any]:
-    """Read the measurements and every optional object; record why any could not be read."""
-    result: dict[str, Any] = {}
-    errors: dict[str, str] = {}
-    steps: tuple[tuple[str, Callable[[], Awaitable[Any]]], ...] = (
-        ("measurements", pump.read_measurements),
-        ("operation", pump.read_operation),
-        ("faults", pump.read_faults),
-        ("autonight", pump.read_autonight),
-        ("flow_limiters", pump.read_flow_limiters),
-        ("statistics", pump.read_statistics),
-        ("temperatures", pump.read_temperatures),
-        ("energy_kwh", pump.read_energy_kwh),
-        ("panel_setting", pump.read_panel_setting),
-    )
-    for key, read in steps:
-        recorder.label = key
-        try:
-            result[key] = _plain(await read())
-        except GrundfosError as err:
-            errors[key] = f"{type(err).__name__}: {err}"
-            if not pump.transport.is_connected:
-                break  # the link is gone; what was read so far still stands
-    if errors:
-        result["errors"] = errors
-    return result
 
 
 def _parse_ref(text: str) -> ObjectRef:
@@ -355,7 +207,7 @@ async def _pair(args: argparse.Namespace) -> int:
     device = await _wait_for_button(args.address, args.seconds)
     started = time.monotonic()
     async with _connected(args, pairing=True, device=device) as (pump, recorder):
-        identity = await _identity(pump, recorder, include_serial=False)
+        identity = await read_identity(pump, recorder)
     print(f"Paired in {time.monotonic() - started:.1f} s: {identity.model or '-'}")
     if identity.profile is None:
         print(
@@ -366,9 +218,9 @@ async def _pair(args: argparse.Namespace) -> int:
 
 async def _info(args: argparse.Namespace) -> int:
     async with _connected(args) as (pump, recorder):
-        identity = await _identity(pump, recorder, include_serial=args.include_serial)
+        identity = await read_identity(pump, recorder, private=not args.include_private)
     for key, value in asdict(identity).items():
-        if value is not None or key not in ("serial_number", "production_code"):
+        if value is not None or key not in ("serial_number", "production_code", "unit_name"):
             print(f"{key + ':':<22}{value if value is not None else '-'}")
     profile = identity.profile
     print(f"{'profile:':<22}{profile.name if profile else 'not supported yet'}")
@@ -377,7 +229,7 @@ async def _info(args: argparse.Namespace) -> int:
 
 async def _read(args: argparse.Namespace) -> int:
     async with _connected(args) as (pump, recorder):
-        result = await _read_all(pump, recorder)
+        result = await read_all(pump, recorder)
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
@@ -455,7 +307,7 @@ async def _watch(args: argparse.Namespace) -> int:
         try:
             await recorder.connect()
             connected = time.perf_counter() - started
-            result = await _read_all(GrundfosPump(recorder), recorder)
+            result = await read_all(GrundfosPump(recorder), recorder)
         except GrundfosError as err:
             print(f"{stamp}  failed after {time.perf_counter() - started:.2f} s: {err}")
             continue
@@ -482,28 +334,30 @@ async def _watch(args: argparse.Namespace) -> int:
 async def _capture(args: argparse.Namespace) -> int:
     path = Path(args.file)
     async with _connected(args) as (pump, recorder):
-        identity = await _identity(pump, recorder, include_serial=args.include_serial)
-        await _read_all(pump, recorder)
-        recorder.label = "probe"
-        await pump.probe_capabilities()
+        capture = await record_capture(pump, recorder, private=not args.include_private)
     stamp = datetime.now().astimezone().isoformat(timespec="seconds")
-    lines = [
-        (
-            f"# Recorded from {identity.model or 'a Grundfos pump'} on {stamp} with the "
-            "grundfos-ble command line, through a local adapter."
-        ),
-        "# One whole frame per '<' line.",
-    ]
-    if args.note:
-        lines.append(f"# {args.note}")
-    for label, request, reply in recorder.exchanges:
-        lines += ["", f"# {label}", f"> {request.hex(' ')}", f"< {reply.hex(' ')}"]
-    await asyncio.to_thread(path.write_text, "\n".join(lines) + "\n", encoding="utf-8")
-    print(f"Wrote {len(recorder.exchanges)} exchanges to {path}")
+    header = (
+        f"Recorded from {capture.identity.model or 'a Grundfos pump'} on {stamp} with the "
+        "grundfos-ble command line, through a local adapter."
+    )
+    text = "\n".join(capture.fixture_lines(header, args.note)) + "\n"
+    await asyncio.to_thread(path.write_text, text, encoding="utf-8")
+    print(f"Wrote {len(capture.exchanges)} exchanges to {path}")
     return 0
 
 
 # --- Entry point --------------------------------------------------------------------------------
+
+
+def _private_flag(parser: argparse.ArgumentParser, verb: str) -> None:
+    # --include-serial is the 0.4 name, kept working.
+    parser.add_argument(
+        "--include-private",
+        "--include-serial",
+        dest="include_private",
+        action="store_true",
+        help=f"also {verb} the serial number, production code and the pump's own name",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -530,9 +384,7 @@ def build_parser() -> argparse.ArgumentParser:
     pair.add_argument(
         "--seconds", type=float, default=BUTTON_WAIT_SECONDS, help="how long to wait for it"
     )
-    add("info", _info, "read the identity").add_argument(
-        "--include-serial", action="store_true", help="also read the serial and production code"
-    )
+    _private_flag(add("info", _info, "read the identity"), "read")
     add("read", _read, "read the measurements and every optional object once").add_argument(
         "--json", action="store_true", help="print JSON"
     )
@@ -552,9 +404,7 @@ def build_parser() -> argparse.ArgumentParser:
     capture = add("capture", _capture, "read everything and write it as a test fixture")
     capture.add_argument("file", help="fixture file to write")
     capture.add_argument("--note", help="a comment line to add, e.g. the pump's display")
-    capture.add_argument(
-        "--include-serial", action="store_true", help="also record the serial and production code"
-    )
+    _private_flag(capture, "record")
     return parser
 
 

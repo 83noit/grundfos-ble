@@ -68,10 +68,21 @@ def test_info_leaves_out_private_strings(pump: Any, capsys: pytest.CaptureFixtur
     assert "ALPHA2 GO XX-75" in out
     assert "profile:              ALPHA2 GO" in out
     assert "SECRET" not in out
-    assert all(frame[4:7] not in (b"\x07\x01\x09", b"\x07\x01\x0a") for frame in pump.replay.sent)
+    assert "alpha2go" not in out
+    assert all(
+        frame[4:7] not in (b"\x07\x01\x09", b"\x07\x01\x0a", b"\x07\x01\x11")
+        for frame in pump.replay.sent
+    )
 
 
 def test_info_can_include_them(pump: Any, capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["info", ADDRESS, "--include-private"]) == 0
+    out = capsys.readouterr().out
+    assert "SERIAL-SECRET" in out
+    assert "unit_name:            alpha2go" in out
+
+
+def test_include_serial_still_works(pump: Any, capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["info", ADDRESS, "--include-serial"]) == 0
     assert "SERIAL-SECRET" in capsys.readouterr().out
 

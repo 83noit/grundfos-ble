@@ -14,6 +14,7 @@ from grundfos_ble.advertisement import (
     parse_advertisement,
 )
 from grundfos_ble.bluez import remove_bluez_bond
+from grundfos_ble.capture import Capture, Recorder, record_capture
 from grundfos_ble.exceptions import (
     ConnectionLost,
     CrcError,
@@ -68,6 +69,7 @@ __all__ = [
     "WRITES_ENABLED",
     "Advertisement",
     "BleTransport",
+    "Capture",
     "Command",
     "ConnectionLost",
     "ControlMode",
@@ -93,6 +95,7 @@ __all__ = [
     "PanelSetting",
     "ProbeResult",
     "ProtocolError",
+    "Recorder",
     "RequestTimeout",
     "Statistics",
     "Temperatures",
@@ -102,6 +105,7 @@ __all__ = [
     "error_code_name",
     "parse_advertisement",
     "profile_for",
+    "record_capture",
     "remove_bluez_bond",
     "setpoint_display",
     "setpoint_unit",

@@ -117,11 +117,13 @@ $ grundfos-ble watch AA:BB:CC:DD:EE:FF --interval 60 --verbose-timings
 $ grundfos-ble capture AA:BB:CC:DD:EE:FF session.hex --note "display: 1.0 m3/h"
 ```
 
-`pair` adds a new bond (a saved pairing) on the pump. The pump has kept at least three at
-once, but nobody knows its limit and it has no way to forget one, so only pair computers you'll
-keep using. `info` and `capture` leave out the serial number and production code unless you
-add `--include-serial`, so you can share what they print. `capture` writes the same file format
-that `grundfos_ble.testing` reads. Put `-v` before the command to log every frame.
+`pair` adds a new bond (a saved pairing) on the pump. The pump has kept at least three at once,
+but nobody knows its limit and it has no way to forget one, so only pair computers you'll keep
+using. `info` and `capture` leave out the serial number, production code and the name you gave
+the pump unless you add `--include-private`, so you can share what they print. `capture` writes
+the same file format that `grundfos_ble.testing` reads. Put `-v` before the command to log every
+frame. To ask for a pump this library doesn't support yet, see [Asking for a new
+pump](https://github.com/83noit/ha-grundfos-ble/blob/main/docs/new-pump.md).
 
 On a Mac, the address is a CoreBluetooth UUID, not a MAC address: copy it from `scan`. Your
 terminal needs Bluetooth permission (System Settings → Privacy & Security → Bluetooth), and

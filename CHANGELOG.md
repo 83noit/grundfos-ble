@@ -7,8 +7,19 @@ the API or change defaults; a patch release only fixes bugs.
 
 ## [Unreleased]
 
+### Added
+
+- `grundfos_ble.capture`: `Recorder`, `record_capture()` and `Capture`, which read the identity,
+  every known object and the probe once and keep every frame, in the fixture format. The command
+  line's `capture` now uses them, and so can Home Assistant, so the owner of a pump this library
+  doesn't support yet can describe it without a computer. A recorder never writes. With
+  `private=True`, the default, it leaves out the serial number, the production code and the
+  name the owner gave the pump.
+
 ### Changed
 
+- `info` and `capture` take `--include-private` in place of `--include-serial`, which still
+  works. Without it they now also leave out the name you gave the pump.
 - The README is rewritten in plainer English, along with this changelog, the security policy
   and the prose in `docs/protocol.md`. On the way, the docs now say the library has also run
   from a Mac, that the pump has kept at least three bonds at once, and that it stops
