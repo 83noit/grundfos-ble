@@ -26,8 +26,9 @@ it works with.
 
 **Safety.** A circulator pump is part of your heating. This release only reads, but later
 releases will be able to change how the pump runs, and wrong settings can stop the water
-moving. The library has been tested on one ALPHA2 GO and comes with no warranty (see the
-[licence](https://github.com/83noit/grundfos-ble/blob/main/LICENSE)). Use it at your own risk.
+moving. The library has been tested on one ALPHA2 GO and one ALPHA HWR, and comes with no
+warranty (see the [licence](https://github.com/83noit/grundfos-ble/blob/main/LICENSE)). Use it
+at your own risk.
 
 ## What it does
 
@@ -210,7 +211,7 @@ GO. That pump also gave sensible-looking answers for the operation state, panel 
 limiters, AutoNight, alarms, warnings, statistics, temperatures and energy, with no fault
 active. The other objects come from recorded traffic or from documentation for related pumps.
 A recording from one ALPHA HWR (an ALPHA 15-58F) matches what the Grundfos GO app showed for
-it. Nothing has been tried on other pump families.
+it, and its owner has it running in Home Assistant. Nothing has been tried on other pump families.
 
 ## Acknowledgements
 

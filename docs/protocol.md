@@ -17,6 +17,11 @@ The objects the library reads or writes are defined, with the same tags, in
 `grundfos_ble/registry/alpha2go.py`. The QH coefficients (93/180–184, 93/200) and the clock
 (94/101) are listed here for reference only; they aren't in the registry.
 
+The ALPHA HWR (family 52 type 7) answers the same objects, with the same types and versions. A
+recording from an ALPHA 15-58F (`testdata/alpha_hwr`) matched what the Grundfos GO app showed,
+except that it leaves the electronics temperature at zero bytes and turns down AutoNight
+(90/8). The tags below still describe the ALPHA2 GO.
+
 ## Transport
 
 | Item | Value | Status |
@@ -27,7 +32,7 @@ The objects the library reads or writes are defined, with the same tags, in
 | GATT characteristic | `859cffd1-036e-432a-aa28-1a0085b87ba9`, write-without-response + notify | measured |
 | Write size | ≤ 20 bytes per write, whatever the MTU | captured, documented |
 | Reply size | ≤ 20 bytes per notification; reassemble to LEN + 4 | measured |
-| Encryption | mandatory; unencrypted link dropped ~2 s after connect; SMP accepted ~3 s after the button; at least two bonds coexist (proxy and phone) | measured |
+| Encryption | mandatory; unencrypted link dropped ~2 s after connect; SMP accepted ~3 s after the button; at least three bonds coexist (phone, proxy and Mac) | measured |
 | While a client is connected | the pump stops advertising (none for 97.6 s while the GO app was connected); 0x01 seen only as a client disconnected | measured |
 | Advertising interval | continuous; how often you hear it depends on the receiver: several times a second on a Mac, about every 8 s through Home Assistant | measured |
 

@@ -53,9 +53,9 @@ WATCH_SECONDS = 60.0
 EXIT_INTERRUPTED = 130
 
 BOND_WARNING = (
-    "Pairing makes a new bond on the pump. It has held at least two at once (a phone and a "
-    "proxy), but its maximum is not documented and it offers no way to forget one, so pair "
-    "only computers you will keep using."
+    "Pairing makes a new bond on the pump. It has held at least three at once (a phone, a "
+    "proxy and a Mac), but its maximum is not documented and it offers no way to forget one, "
+    "so pair only computers you will keep using."
 )
 
 
