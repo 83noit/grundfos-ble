@@ -7,6 +7,18 @@ the API or change defaults; a patch release only fixes bugs.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-25
+
+Everything in 0.5.0b1 and 0.5.0b2 below. The ALPHA HWR support is confirmed in Home Assistant
+by the owner of the ALPHA 15-58F the recording came from. Plus:
+
+### Changed
+
+- The package summary on PyPI is shorter and no longer names the models, which the README
+  lists.
+- The bond warning in `pair` says the pump has held at least three bonds, as the README does.
+  `docs/protocol.md` said two as well.
+
 ## [0.5.0b2] - 2026-11-24
 
 Beta, for owners of an ALPHA HWR to try before 0.5.0.
@@ -226,7 +238,8 @@ Beta, so Home Assistant can record a pump this library doesn't support yet.
 - `grundfos_ble.testing`: a replay transport, a file format for recorded frames, and the
   recorded ALPHA2 GO frames as `FIXTURES`.
 
-[Unreleased]: https://github.com/83noit/grundfos-ble/compare/v0.5.0b2...HEAD
+[Unreleased]: https://github.com/83noit/grundfos-ble/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/83noit/grundfos-ble/compare/v0.4.0...v0.5.0
 [0.5.0b2]: https://github.com/83noit/grundfos-ble/compare/v0.5.0b1...v0.5.0b2
 [0.5.0b1]: https://github.com/83noit/grundfos-ble/compare/v0.4.0...v0.5.0b1
 [0.4.0]: https://github.com/83noit/grundfos-ble/compare/v0.3.0...v0.4.0
